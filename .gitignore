@@ -135,6 +135,7 @@ vite.config.js
 docs/*
 !docs/RESPIRE_INTEGRATION_PLAN.md
 !docs/RESPIRE_INTEGRATION_REVIEW.md
+!docs/DEPLOYMENT.md
 !docs/admin-api-keys.md
 !docs/mcp.md
 !docs/PAYMENT.md

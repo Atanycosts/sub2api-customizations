@@ -1,5 +1,10 @@
 # Sub2API Deployment Files
 
+> **本项目的生产发布不使用本文件描述的通用安装方式。**
+> 生产部署的唯一真源是 [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) 与
+> `deploy/publish-production.sh`。下面保留的是上游提供的 Docker Compose /
+> Apple container / 二进制安装三种通用方式，供其他场景参考。
+
 This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
 
 ## Deployment Methods
