@@ -64,6 +64,7 @@ func extractClaudeCodeSessionIDFromPayload(body []byte) string {
 // internal probes and incomplete request contexts instead of creating a cache
 // identity that could be shared by unrelated tenants.
 func resolveGrokCacheIdentity(c *gin.Context, body []byte, explicitKey, upstreamModel string) string {
+	body = memoryRequestIdentityBody(c, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
 	if apiKeyID <= 0 {
 		return ""

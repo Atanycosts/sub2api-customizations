@@ -165,6 +165,7 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 	if c == nil {
 		return ""
 	}
+	body = memoryRequestIdentityBody(c, body)
 
 	sessionID := explicitOpenAIRequestSessionID(c, body)
 	if sessionID == "" && len(body) > 0 {

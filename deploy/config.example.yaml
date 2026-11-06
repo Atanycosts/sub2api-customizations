@@ -72,6 +72,27 @@ server:
     # 每个流的最大上传缓冲区（字节，默认 512KB）
     max_upload_buffer_per_stream: 524288
 
+# Server memory: ordinary API clients do not require a local Respire install.
+# Bind only dedicated immutable v1.0.20 Runtime libraries after deployment
+# readiness and applicable licensing have been verified. No personal vault reuse.
+memory:
+  enabled: false
+  bindings: []
+  # - user_id: 42
+  #   base_url: "http://127.0.0.1:15170"
+  #   data_dir: "/srv/sub2api-memory/user42/accounts/server/default"
+  recall_timeout_ms: 300
+  archive_timeout_ms: 120000
+  enqueue_timeout_ms: 500
+  poll_interval_ms: 1000
+  lease_seconds: 180
+  max_attempts: 3
+  max_items: 8
+  max_bytes: 8192
+  max_tokens: 2048
+  capture_max_bytes: 262144
+  max_response_bytes: 1048576
+
 # =============================================================================
 # WebAuthn / Passkey Configuration
 # WebAuthn / Passkey 配置

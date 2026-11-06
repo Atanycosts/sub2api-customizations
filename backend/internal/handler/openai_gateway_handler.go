@@ -40,6 +40,7 @@ type OpenAIGatewayHandler struct {
 	billingCacheService        *service.BillingCacheService
 	apiKeyService              *service.APIKeyService
 	usageRecordWorkerPool      *service.UsageRecordWorkerPool
+	memoryGateway              *service.MemoryGateway
 	errorPassthroughService    *service.ErrorPassthroughService
 	contentModerationService   *service.ContentModerationService
 	securityAuditCoordinator   *securityaudit.Coordinator
@@ -615,9 +616,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.handleStreamingAwareError(c, status, code, message, streamStarted)
 		return
 	}
+	var memorySession *responsesMemorySession
+	if !legacyCompact && !nativeV2 && !imageIntent && h.memoryGateway != nil {
+		var memoryBody []byte
+		memoryBody, memorySession = h.prepareResponsesMemory(c, forwardBody, reqModel, reqLog)
+		if memorySession != nil {
+			c.Request = c.Request.WithContext(service.WithMemoryOriginalBody(c.Request.Context(), forwardBody))
+			c.Header("X-Sub2API-Memory-Event-Id", memorySession.eventID)
+		}
+		forwardBody = memoryBody
+	}
 
 	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
-	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, body))
+	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, forwardBody))
 	if err != nil {
 		reqLog.Info("openai.inflight_reservation_rejected", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
@@ -802,8 +813,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
+		var memoryCapture *memoryResponsesCapture
+		if memorySession != nil {
+			memoryCapture = newMemoryResponsesCapture(c.Writer, reqStream, h.cfg.Memory.CaptureMaxBytes)
+			c.Writer = memoryCapture
+		}
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
+				if memoryCapture != nil {
+					c.Writer = memoryCapture.ResponseWriter
+				}
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()
 				}
@@ -1010,6 +1029,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		submitResponsesUsage(result)
+		h.archiveResponsesMemory(c, memorySession, memoryCapture, result, err, reqLog)
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),

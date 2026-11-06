@@ -109,6 +109,7 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
+	Memory                  MemoryConfig                  `mapstructure:"memory"`
 
 	// Enforce only API-key spending windows in simple mode.
 	SimpleModeKeyRateLimitEnabled bool `mapstructure:"simple_mode_key_rate_limit_enabled" yaml:"simple_mode_key_rate_limit_enabled"`
@@ -2415,6 +2416,19 @@ func setDefaults() {
 	viper.SetDefault("plugins.max_upload_bytes", int64(128*1024*1024))
 	viper.SetDefault("plugins.max_uncompressed_bytes", int64(256*1024*1024))
 	viper.SetDefault("plugins.start_timeout_seconds", 15)
+	viper.SetDefault("memory.enabled", false)
+	viper.SetDefault("memory.bindings", []MemoryRuntimeBinding{})
+	viper.SetDefault("memory.recall_timeout_ms", 300)
+	viper.SetDefault("memory.archive_timeout_ms", 120000)
+	viper.SetDefault("memory.enqueue_timeout_ms", 500)
+	viper.SetDefault("memory.poll_interval_ms", 1000)
+	viper.SetDefault("memory.lease_seconds", 180)
+	viper.SetDefault("memory.max_attempts", 3)
+	viper.SetDefault("memory.max_items", 8)
+	viper.SetDefault("memory.max_bytes", 8192)
+	viper.SetDefault("memory.max_tokens", 2048)
+	viper.SetDefault("memory.capture_max_bytes", 262144)
+	viper.SetDefault("memory.max_response_bytes", int64(1048576))
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
@@ -2766,6 +2780,9 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if err := c.Memory.Validate(); err != nil {
+		return err
+	}
 	if c.Gateway.MinOutputTokens < 16 {
 		return fmt.Errorf("gateway.min_output_tokens must be at least 16")
 	}

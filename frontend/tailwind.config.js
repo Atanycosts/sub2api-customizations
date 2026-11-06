@@ -5,48 +5,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 主色调 - Teal/Cyan 青色系
+        // 主色调 —— 值来自 src/styles/tokens.css（全站唯一来源）
+        // 400 = 深色主题强调色 #5fe0bc    600 = 浅色主题强调色 #0a8a72
         primary: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          800: '#115e59',
-          900: '#134e4a',
-          950: '#042f2e'
+          50: 'rgb(var(--c-primary-50) / <alpha-value>)',
+          100: 'rgb(var(--c-primary-100) / <alpha-value>)',
+          200: 'rgb(var(--c-primary-200) / <alpha-value>)',
+          300: 'rgb(var(--c-primary-300) / <alpha-value>)',
+          400: 'rgb(var(--c-primary-400) / <alpha-value>)',
+          500: 'rgb(var(--c-primary-500) / <alpha-value>)',
+          600: 'rgb(var(--c-primary-600) / <alpha-value>)',
+          700: 'rgb(var(--c-primary-700) / <alpha-value>)',
+          800: 'rgb(var(--c-primary-800) / <alpha-value>)',
+          900: 'rgb(var(--c-primary-900) / <alpha-value>)',
+          950: 'rgb(var(--c-primary-950) / <alpha-value>)'
         },
-        // 辅助色 - 深蓝灰
-        accent: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
-        },
-        // 深色模式背景
+        // 深色模式中性色 —— 同为 tokens.css 提供
         dark: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
-        }
+          50: 'rgb(var(--c-dark-50) / <alpha-value>)',
+          100: 'rgb(var(--c-dark-100) / <alpha-value>)',
+          200: 'rgb(var(--c-dark-200) / <alpha-value>)',
+          300: 'rgb(var(--c-dark-300) / <alpha-value>)',
+          400: 'rgb(var(--c-dark-400) / <alpha-value>)',
+          500: 'rgb(var(--c-dark-500) / <alpha-value>)',
+          600: 'rgb(var(--c-dark-600) / <alpha-value>)',
+          700: 'rgb(var(--c-dark-700) / <alpha-value>)',
+          800: 'rgb(var(--c-dark-800) / <alpha-value>)',
+          900: 'rgb(var(--c-dark-900) / <alpha-value>)',
+          950: 'rgb(var(--c-dark-950) / <alpha-value>)'
+        },
+        // 语义色（随主题切换）
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+        'surface-raised': 'rgb(var(--c-surface-raised) / <alpha-value>)',
+        'surface-sunken': 'rgb(var(--c-surface-sunken) / <alpha-value>)',
+        ink: 'rgb(var(--c-ink) / <alpha-value>)',
+        'ink-muted': 'rgb(var(--c-ink-muted) / <alpha-value>)',
       },
       fontFamily: {
         sans: [

@@ -331,7 +331,9 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.Contains(t, w2.Body.String(), `nonce="nonce2"`)
 	})
 
-	t.Run("sets_etag_header", func(t *testing.T) {
+	// HTML 壳不再下发 ETag：CSP nonce 每请求重新生成，
+	// 条件缓存会让旧 body 的 nonce 与新响应头对不上。
+	t.Run("does_not_send_etag", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -346,13 +348,12 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		etag := w.Header().Get("ETag")
-		assert.NotEmpty(t, etag)
-		assert.True(t, strings.HasPrefix(etag, `"`))
-		assert.True(t, strings.HasSuffix(etag, `"`))
+		assert.Empty(t, w.Header().Get("ETag"))
 	})
 
-	t.Run("returns_304_for_matching_etag", func(t *testing.T) {
+	// 回归保护：带 If-None-Match 的请求必须仍拿到 200 + 新 nonce，
+	// 而不是 304（那样浏览器会复用旧 nonce 的 body，内联配置脚本被 CSP 拦下）
+	t.Run("serves_full_body_for_conditional_request", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -360,29 +361,25 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		server, err := NewFrontendServer(provider)
 		require.NoError(t, err)
 
-		// Use a real router for proper 304 handling
 		router := gin.New()
 		router.Use(func(c *gin.Context) {
-			c.Set(middleware.CSPNonceKey, "test-nonce")
+			c.Set(middleware.CSPNonceKey, "nonce-first")
 			c.Next()
 		})
 		router.Use(server.Middleware())
 
-		// First request to populate cache and get ETag
 		w1 := httptest.NewRecorder()
-		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
-		router.ServeHTTP(w1, req1)
-		etag := w1.Header().Get("ETag")
-		require.NotEmpty(t, etag)
+		router.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/", nil))
+		require.Equal(t, http.StatusOK, w1.Code)
+		require.Contains(t, w1.Body.String(), "nonce-first")
 
-		// Second request with If-None-Match
 		w2 := httptest.NewRecorder()
 		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("If-None-Match", etag)
+		req2.Header.Set("If-None-Match", `"anything"`)
 		router.ServeHTTP(w2, req2)
 
-		assert.Equal(t, http.StatusNotModified, w2.Code)
-		assert.Empty(t, w2.Body.String())
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.Contains(t, w2.Body.String(), "nonce-first")
 	})
 
 	t.Run("sets_cache_control_header", func(t *testing.T) {
@@ -400,7 +397,9 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+		// HTML 壳一律 no-store：CSP nonce 每请求变化，缓存复用会让
+		// 旧 body 里的 nonce 与新响应头的 nonce 对不上
+		assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 	})
 
 	t.Run("fallback_on_settings_error", func(t *testing.T) {

@@ -1,13 +1,12 @@
 import { sanitizeUrl } from '@/utils/url'
 
+export const DEFAULT_SITE_LOGO_URL = '/logo.svg?v=20261107'
+
 export function updateFavicon(logoUrl: string): void {
-  const sanitizedLogoUrl = sanitizeUrl(logoUrl, {
+  const faviconUrl = sanitizeUrl(logoUrl, {
     allowRelative: true,
     allowDataUrl: true,
-  })
-  if (!sanitizedLogoUrl) {
-    return
-  }
+  }) || DEFAULT_SITE_LOGO_URL
 
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (!link) {
@@ -16,6 +15,10 @@ export function updateFavicon(logoUrl: string): void {
     document.head.appendChild(link)
   }
 
-  link.type = sanitizedLogoUrl.endsWith('.svg') ? 'image/svg+xml' : 'image/x-icon'
-  link.href = sanitizedLogoUrl
+  if (/\.svg(?:[?#]|$)/i.test(faviconUrl) || faviconUrl.startsWith('data:image/svg+xml')) {
+    link.type = 'image/svg+xml'
+  } else {
+    link.removeAttribute('type')
+  }
+  link.href = faviconUrl
 }

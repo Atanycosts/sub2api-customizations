@@ -16,7 +16,22 @@ export default {
     goToDashboard: 'Go to Dashboard',
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
+    heroTitleA: 'Subscriptions',
+    heroTitleB: '→ APIs',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
+    // CORTEX landing copy — kept separate from the generic keys above; different voice.
+    cortex: {
+      eyebrowLeft: 'OPEN SOURCE · SELF-HOSTED',
+      eyebrowRight: 'V0.2.19',
+      titleTermA: 'LLM',
+      titleB: 'your',
+      titleTermB: 'SGI',
+      titleSuffix: '?',
+      lead: 'Claude, GPT, Gemini — one key, one endpoint.',
+      leadSub: 'Billed by the token. Never pay for seats you do not fill.',
+      ctaPrimary: 'Get a key',
+      ctaSecondary: 'View on GitHub'
+    },
     tags: {
       subscriptionToApi: 'Subscription to API',
       stickySession: 'Session Persistence',

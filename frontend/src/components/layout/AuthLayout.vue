@@ -1,63 +1,27 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-    <!-- Background -->
-    <div
-      class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
-    ></div>
+  <div class="cx-auth cx-scope">
+    <div class="cx-auth-grid" aria-hidden="true"></div>
+    <span class="cx-auth-edge" aria-hidden="true">AUTHENTICATION / AXIAL 02</span>
 
-    <!-- Decorative Elements -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <!-- Gradient Orbs -->
-      <div
-        class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
-      <div
-        class="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
+    <div class="cx-auth-inner">
+      <!-- Shared site identity, matching the homepage and application navigation. -->
+      <header v-if="settingsLoaded" class="cx-auth-brand">
+        <div class="cx-auth-markrow">
+          <SiteLogo :src="siteLogo" :alt="siteName" class="cx-auth-logo" />
+          <span class="cx-auth-name">{{ siteName }}</span>
+        </div>
+        <p class="cx-auth-sub">{{ siteSubtitle }}</p>
+      </header>
 
-      <!-- Grid Pattern -->
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
-    </div>
-
-    <!-- Content Container -->
-    <div class="relative z-10 w-full max-w-md">
-      <!-- Logo/Brand -->
-      <div class="mb-8 text-center">
-        <!-- Custom Logo or Default Logo -->
-        <template v-if="settingsLoaded">
-          <div
-            class="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30"
-          >
-            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
-          </div>
-          <h1 class="text-gradient mb-2 text-3xl font-bold">
-            {{ siteName }}
-          </h1>
-          <p class="text-sm text-gray-500 dark:text-dark-400">
-            {{ siteSubtitle }}
-          </p>
-        </template>
-      </div>
-
-      <!-- Card Container -->
-      <div class="card-glass rounded-2xl p-8 shadow-glass">
+      <div class="cx-auth-card">
         <slot />
       </div>
 
-      <!-- Footer Links -->
-      <div class="mt-6 text-center text-sm">
+      <div class="cx-auth-extra">
         <slot name="footer" />
       </div>
 
-      <!-- Copyright -->
-      <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. All rights reserved.
-      </div>
+      <p class="cx-auth-copy">&copy; {{ currentYear }} {{ siteName }}</p>
     </div>
   </div>
 </template>
@@ -66,6 +30,7 @@
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import SiteLogo from '@/components/common/SiteLogo.vue'
 
 const appStore = useAppStore()
 
@@ -82,7 +47,156 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.text-gradient {
-  @apply bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent;
+.cx-auth {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: clamp(24px, 5vw, 72px) clamp(18px, 4vw, 64px);
+  background: var(--cx-bg);
+  color: var(--cx-ink);
+  font-family: var(--cx-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 与首页同一张 80px 网格，只是更淡；径向遮罩让四角消失 */
+.cx-auth-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--cx-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--cx-grid) 1px, transparent 1px);
+  background-size: 80px 80px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 46%, #000 10%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 62% at 50% 46%, #000 10%, transparent 100%);
+}
+
+.cx-auth-edge {
+  position: absolute;
+  right: 16px;
+  bottom: 16%;
+  writing-mode: vertical-rl;
+  font: 10px var(--cx-mono);
+  letter-spacing: 0.18em;
+  color: var(--cx-dim);
+  pointer-events: none;
+}
+
+.cx-auth-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 396px;
+}
+
+/* 品牌 */
+.cx-auth-brand {
+  margin-bottom: 28px;
+}
+.cx-auth-markrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cx-auth-logo {
+  width: 32px;
+  height: 32px;
+}
+.cx-auth-name {
+  font: 500 13px var(--cx-mono);
+  letter-spacing: 0.12em;
+  color: var(--cx-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cx-auth-sub {
+  margin: 12px 0 0;
+  font: 10px/1.6 var(--cx-mono);
+  letter-spacing: 0.12em;
+  color: var(--cx-dim);
+}
+
+/* 卡片：发丝线 + 2px 圆角，没有阴影 */
+.cx-auth-card {
+  border: 1px solid var(--cx-line-2);
+  border-radius: 2px;
+  background: var(--cx-card);
+  padding: clamp(22px, 3vw, 34px);
+}
+
+.cx-auth-extra {
+  margin-top: 18px;
+}
+
+.cx-auth-copy {
+  margin: 26px 0 0;
+  font: 10px var(--cx-mono);
+  letter-spacing: 0.1em;
+  color: var(--cx-dim);
+}
+
+/* ---- 表单元素在 CORTEX 语境下的重绘 ---- */
+.cx-auth-card :deep(.input) {
+  border-radius: 2px;
+  border-color: var(--cx-line-2);
+  background: transparent;
+  font-size: 14px;
+  color: var(--cx-ink);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.cx-auth-card :deep(.input::placeholder) {
+  color: var(--cx-dim);
+}
+.cx-auth-card :deep(.input:focus) {
+  border-color: var(--cx-accent);
+  box-shadow: none;
+  outline: none;
+}
+.cx-auth-card :deep(.input.input-error),
+.cx-auth-card :deep(.input.input-error:focus),
+.cx-auth-card :deep(.input.border-red-500),
+.cx-auth-card :deep(.input.border-red-500:focus) {
+  border-color: theme('colors.red.500');
+}
+.cx-auth-card :deep(.input.border-green-500),
+.cx-auth-card :deep(.input.border-green-500:focus) {
+  border-color: theme('colors.green.500');
+}
+.cx-auth-card :deep(.input-label) {
+  margin-bottom: 7px;
+  font: 10px var(--cx-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cx-muted);
+}
+.cx-auth-card :deep(h2) {
+  font-family: var(--cx-serif);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--cx-ink);
+  font-size: 26px;
+}
+.cx-auth-card :deep(a) {
+  color: var(--cx-accent);
+}
+/* 认证页内的状态提示条保留原有语义色（琥珀/绿/红），但圆角收进 2px，
+   否则会出现"发丝线卡片里塞一颗胶囊"的语言冲突 */
+/* 注意 .btn 的圆角来自 @apply rounded-xl，元素上并没有 rounded-xl 类，
+   所以必须同时匹配 .btn，否则 OAuth 按钮仍是胶囊形 */
+.cx-auth-card :deep(.btn),
+.cx-auth-card :deep(.rounded-xl),
+.cx-auth-card :deep(.rounded-lg) {
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.cx-auth-card :deep(button[type='submit']) {
+  border-radius: 2px;
+  font-size: 13px;
 }
 </style>

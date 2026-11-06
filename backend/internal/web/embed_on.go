@@ -149,18 +149,13 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Check cache first
 	cached := s.cache.Get()
 	if cached != nil {
-		// Check If-None-Match for 304 response
-		if match := c.GetHeader("If-None-Match"); match == cached.ETag {
-			c.Status(http.StatusNotModified)
-			c.Abort()
-			return
-		}
-
-		// Replace nonce placeholder with actual nonce before serving
+		// 不返回 304：CSP nonce 每请求重新生成，而 304 不带 body，
+		// 浏览器会复用缓存里的旧 HTML（旧 nonce）却采用本次响应头里的新
+		// nonce，导致内联的 window.__APP_CONFIG__ 被 CSP 拦截、配置回退。
+		// HTML 壳一律 no-store，静态资源都是带 hash 的文件名，不受影响。
 		content := replaceNoncePlaceholder(cached.Content, nonce)
 
-		c.Header("ETag", cached.ETag)
-		c.Header("Cache-Control", "no-cache") // Must revalidate
+		c.Header("Cache-Control", "no-store")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 		c.Abort()
 		return
@@ -192,11 +187,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Replace nonce placeholder with actual nonce before serving
 	content := replaceNoncePlaceholder(rendered, nonce)
 
-	cached = s.cache.Get()
-	if cached != nil {
-		c.Header("ETag", cached.ETag)
-	}
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
 }

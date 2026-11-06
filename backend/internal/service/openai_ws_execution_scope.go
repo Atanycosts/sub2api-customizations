@@ -143,6 +143,7 @@ func openAIWSExecutionScopeSeed(apiKeyID int64, identity, value, lane string) st
 // 两种身份都没有时返回空作用域：按请求内容推导的粘性种子只服务账号亲和，
 // 不是可靠身份，不参与抢占。
 func resolveOpenAIWSExecutionScope(c *gin.Context, body []byte, apiKeyID int64) (scope, threadID string) {
+	body = memoryRequestIdentityBody(c, body)
 	lane := resolveOpenAIWSExecutionLane(c, body)
 	if threadID = resolveOpenAIWSClientThreadID(c, body); threadID != "" {
 		scope, _ = deriveOpenAISessionHashes(openAIWSExecutionScopeSeed(apiKeyID, "thread", threadID, lane))

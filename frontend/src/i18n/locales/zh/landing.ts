@@ -16,7 +16,22 @@ export default {
     goToDashboard: '进入控制台',
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
+    heroTitleA: '把订阅',
+    heroTitleB: '变成接口',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    // CORTEX 首页专用文案（不要复用上面的通用 key，两套语气不一样）
+    cortex: {
+      eyebrowLeft: '开源 · 自托管',
+      eyebrowRight: 'V0.2.19',
+      titleTermA: 'LLM',
+      titleB: '你的',
+      titleTermB: 'SGI',
+      titleSuffix: '?',
+      lead: 'Claude、GPT、Gemini —— 一套密钥，一个端点。',
+      leadSub: '按 token 计费，不为闲置额度买单。',
+      ctaPrimary: '获取密钥',
+      ctaSecondary: '在 GitHub 上查看'
+    },
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',

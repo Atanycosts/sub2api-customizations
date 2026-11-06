@@ -1,0 +1,77 @@
+/* 全站色板令牌 —— 唯一来源。Tailwind 与 CORTEX 首页都从这里取值。
+   格式为 RGB 通道三元组，供 rgb(var(--x) / <alpha-value>) 使用，
+   这样 bg-primary-600/10 这类透明度修饰符仍然可用。 */
+
+
+:root {
+  /* primary */
+  --c-primary-50: 238 250 246;
+  --c-primary-100: 211 244 232;
+  --c-primary-200: 167 234 212;
+  --c-primary-300: 127 224 196;
+  --c-primary-400: 95 224 188;
+  --c-primary-500: 29 183 149;
+  --c-primary-600: 10 138 114;
+  --c-primary-700: 9 107 89;
+  --c-primary-800: 10 86 72;
+  --c-primary-900: 10 68 58;
+  --c-primary-950: 4 35 30;
+
+  /* dark */
+  --c-dark-50: 249 250 251;
+  --c-dark-100: 243 245 247;
+  --c-dark-200: 230 234 236;
+  --c-dark-300: 208 215 219;
+  --c-dark-400: 157 168 175;
+  --c-dark-500: 110 122 129;
+  --c-dark-600: 79 90 97;
+  --c-dark-700: 60 70 76;
+  --c-dark-800: 37 46 52;
+  --c-dark-900: 22 30 35;
+  --c-dark-950: 7 14 18;
+}
+
+/* 语义色：跨主题切换，Tailwind 侧用 bg-surface / text-ink */
+:root {
+  --c-surface: 242 243 240;
+  --c-surface-raised: 255 255 255;
+  --c-surface-sunken: 232 234 230;
+  --c-ink: 11 20 24;
+  --c-ink-muted: 90 104 112;
+}
+
+.dark {
+  --c-surface: 6 10 13;
+  --c-surface-raised: 12 18 23;
+  --c-surface-sunken: 12 18 23;
+  --c-ink: 234 242 244;
+  --c-ink-muted: 147 166 176;
+}
+
+/* ------------------------------------------------------------------
+   CORTEX 界面作用域
+   在统一色板之上再取一层语义别名。首页用 .cortex（主题靠 .cx-dark 切换），
+   其余需要 CORTEX 语言的页面（如登录）直接挂 .cx-scope，跟随 html.dark。
+   两者都从上面的 --c-* 取值，色值只有一处定义。
+------------------------------------------------------------------ */
+.cx-scope {
+  --cx-bg: rgb(var(--c-surface));
+  --cx-card: rgb(var(--c-surface-raised));
+  --cx-panel: rgb(var(--c-surface-sunken));
+  --cx-ink: rgb(var(--c-ink));
+  --cx-muted: rgb(var(--c-ink-muted));
+  --cx-dim: rgb(var(--c-dark-400));
+  --cx-line: rgb(var(--c-ink) / 0.13);
+  --cx-line-2: rgb(var(--c-ink) / 0.28);
+  --cx-accent: rgb(var(--c-primary-600));
+  --cx-grid: rgb(var(--c-ink) / 0.05);
+  --cx-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --cx-serif: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', Georgia, serif;
+  --cx-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Cascadia Mono', Consolas, monospace;
+}
+.dark .cx-scope {
+  --cx-dim: rgb(var(--c-dark-500));
+  --cx-line: rgb(var(--c-ink) / 0.12);
+  --cx-accent: rgb(var(--c-primary-400));
+  --cx-grid: rgb(var(--c-ink) / 0.045);
+}
