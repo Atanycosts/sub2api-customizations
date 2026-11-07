@@ -13,6 +13,7 @@ const {
   updateSettings,
   getWebSearchEmulationConfig,
   updateWebSearchEmulationConfig,
+  resetWebSearchUsage,
   getAdminApiKey,
   getOverloadCooldownSettings,
   getRateLimit429CooldownSettings,
@@ -41,6 +42,7 @@ const {
   updateSettings: vi.fn(),
   getWebSearchEmulationConfig: vi.fn(),
   updateWebSearchEmulationConfig: vi.fn(),
+  resetWebSearchUsage: vi.fn(),
   getAdminApiKey: vi.fn(),
   getOverloadCooldownSettings: vi.fn(),
   getRateLimit429CooldownSettings: vi.fn(),
@@ -88,6 +90,7 @@ vi.mock("@/api", () => ({
       updateSettings,
       getWebSearchEmulationConfig,
       updateWebSearchEmulationConfig,
+      resetWebSearchUsage,
       getAdminApiKey,
       getOverloadCooldownSettings,
       getRateLimit429CooldownSettings,
@@ -548,8 +551,9 @@ const baseSettingsResponse = {
   },
 };
 
-function mountView() {
+function mountView(attachTo?: HTMLElement) {
   return mount(SettingsView, {
+    attachTo,
     global: {
       stubs: {
         AppLayout: AppLayoutStub,
@@ -637,6 +641,7 @@ describe("admin SettingsView payment visible method controls", () => {
     updateSettings.mockReset();
     getWebSearchEmulationConfig.mockReset();
     updateWebSearchEmulationConfig.mockReset();
+    resetWebSearchUsage.mockReset();
     getAdminApiKey.mockReset();
     getOverloadCooldownSettings.mockReset();
     getRateLimit429CooldownSettings.mockReset();
@@ -673,6 +678,7 @@ describe("admin SettingsView payment visible method controls", () => {
       enabled: false,
       providers: [],
     });
+    resetWebSearchUsage.mockResolvedValue(undefined);
     getAdminApiKey.mockResolvedValue({
       exists: false,
       masked_key: "",
@@ -723,6 +729,178 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("jumps to a collapsed section and saves its edits after collapsing and changing tabs", async () => {
+    const wrapper = mountView(document.body);
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const section = wrapper.get('#settings-section-gatewayForwarding-codexHardeningTitle');
+    const content = section.get('#settings-section-gatewayForwarding-codexHardeningTitle-content');
+    const scrollIntoView = vi.fn();
+    section.element.scrollIntoView = scrollIntoView;
+    expect(content.isVisible()).toBe(false);
+    expect(section.findAll('input').length).toBeGreaterThan(0);
+
+    await wrapper.get('[data-testid="settings-section-navigation"]').setValue('gatewayForwarding-codexHardeningTitle');
+    await flushPromises();
+    expect(content.isVisible()).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(document.activeElement).toBe(section.element);
+
+    await section.get('input[type="text"]').setValue('1.2.3');
+    await section.get('h2 > button').trigger('click');
+    expect(content.isVisible()).toBe(false);
+    await wrapper.get('#settings-tab-general').trigger('click');
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.pendingChanges');
+    expect(wrapper.findAll('form')).toHaveLength(1);
+
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ min_codex_version: '1.2.3' }));
+    expect(updateSettings.mock.calls.at(-1)?.[0]).not.toHaveProperty('openai_fast_policy_settings');
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    wrapper.unmount();
+  });
+
+  it("keeps section saves independent from the page save status", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const section = wrapper.get('#settings-section-rateLimit429Cooldown');
+    await section.get('input[type="number"]').setValue(30);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    await section.get('button:not([aria-expanded])').trigger('click');
+    await flushPromises();
+    expect(updateRateLimit429CooldownSettings).toHaveBeenCalledWith({ enabled: true, cooldown_seconds: 30 });
+    expect(updateSettings).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("retains pending page edits when saving fails", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="compact-home-toggle"]').setValue(true);
+    updateSettings.mockRejectedValueOnce(new Error('save failed'));
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.pendingChanges');
+    wrapper.unmount();
+  });
+
+  it("retains pending web search edits when its separate request fails", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    await wrapper.get('#settings-section-webSearchEmulation .toggle-stub').setValue(true);
+    updateWebSearchEmulationConfig.mockRejectedValueOnce(new Error('save failed'));
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.pendingChanges');
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    wrapper.unmount();
+  });
+
+  it("preserves edits made while a bulk save is pending and saves them on the next submit", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      codex_cli_only_blacklist: JSON.stringify([{ originator: 'before', ua_contains: [] }]),
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const blacklistInput = wrapper.get('input[placeholder="admin.settings.gatewayForwarding.codexOriginatorPlaceholder"]');
+    await blacklistInput.setValue('submitted-A');
+
+    let resolveSave!: (value: unknown) => void;
+    updateSettings.mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve; }));
+    await wrapper.get('form').trigger('submit.prevent');
+    const firstPayload = updateSettings.mock.calls[0]![0];
+    expect(JSON.parse(firstPayload.codex_cli_only_blacklist)[0].originator).toBe('submitted-A');
+
+    await blacklistInput.setValue('draft-B');
+    await wrapper.get('[data-testid="compact-home-toggle"]').setValue(true);
+    resolveSave({ ...baseSettingsResponse, ...firstPayload });
+    await flushPromises();
+
+    expect((blacklistInput.element as HTMLInputElement).value).toBe('draft-B');
+    expect((wrapper.get('[data-testid="compact-home-toggle"]').element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.pendingChanges');
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    const secondPayload = updateSettings.mock.calls[1]![0];
+    expect(JSON.parse(secondPayload.codex_cli_only_blacklist)[0].originator).toBe('draft-B');
+    expect(secondPayload.compact_home_enabled).toBe(true);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    wrapper.unmount();
+  });
+
+  it("skips unread Web Search settings after a load error and retries without losing other edits", async () => {
+    getWebSearchEmulationConfig.mockRejectedValueOnce({ status: 500 });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    expect(wrapper.get('[data-testid="web-search-load-error"]').text()).toContain('admin.settings.webSearchEmulation.loadFailed');
+    expect(wrapper.find('#settings-section-webSearchEmulation .toggle-stub').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.webSearchEmulation.loadFailed');
+
+    await wrapper.get('[data-testid="compact-home-toggle"]').setValue(true);
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ compact_home_enabled: true }));
+    expect(updateWebSearchEmulationConfig).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.webSearchEmulation.loadFailed');
+
+    await wrapper.get('[data-testid="compact-home-toggle"]').setValue(false);
+    getWebSearchEmulationConfig.mockResolvedValueOnce({ enabled: true, providers: [] });
+    await wrapper.get('[data-testid="web-search-retry"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="web-search-load-error"]').exists()).toBe(false);
+    expect((wrapper.get('#settings-section-webSearchEmulation .toggle-stub').element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.pendingChanges');
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateWebSearchEmulationConfig).toHaveBeenCalledWith({ enabled: true, providers: [] });
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    wrapper.unmount();
+  });
+
+  it("treats a Web Search 404 as a loaded empty configuration", async () => {
+    getWebSearchEmulationConfig.mockRejectedValueOnce({ status: 404 });
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    expect(wrapper.find('[data-testid="web-search-load-error"]').exists()).toBe(false);
+    await wrapper.get('#settings-section-webSearchEmulation .toggle-stub').setValue(true);
+    await wrapper.get('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateWebSearchEmulationConfig).toHaveBeenCalledWith({ enabled: true, providers: [] });
+    wrapper.unmount();
+  });
+
+  it("does not mark Web Search configuration pending after resetting its usage counter", async () => {
+    getWebSearchEmulationConfig.mockResolvedValueOnce({
+      enabled: true,
+      providers: [{ type: 'brave', api_key: '', api_key_configured: true, quota_limit: 1000, quota_used: 20, subscribed_at: null, proxy_id: null, expires_at: null }],
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const section = wrapper.get('#settings-section-webSearchEmulation');
+    await section.get('.cursor-pointer').trigger('click');
+    const reset = section.findAll('button').find(button => button.text() === 'admin.settings.webSearchEmulation.resetUsage');
+    expect(reset).toBeDefined();
+    await reset!.trigger('click');
+    await flushPromises();
+    expect(resetWebSearchUsage).toHaveBeenCalledWith({ provider_type: 'brave' });
+    expect(wrapper.get('[data-testid="settings-save-status"]').text()).toBe('admin.settings.navigation.upToDate');
+    wrapper.unmount();
+    confirm.mockRestore();
   });
 
   it("loads and saves the open button visibility for each custom menu", async () => {

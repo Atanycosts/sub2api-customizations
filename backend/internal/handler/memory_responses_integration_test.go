@@ -80,6 +80,10 @@ func (*memoryVerifierRepository) Claim(context.Context, string, int, time.Durati
 	panic("worker must not start in these tests")
 }
 
+func (*memoryVerifierRepository) Overview(context.Context, int64) (service.MemoryArchiveOverview, error) {
+	panic("not used by the API key gateway")
+}
+
 func (*memoryVerifierRepository) MarkSubmitted(context.Context, service.MemoryArchiveEvent) error {
 	panic("not used")
 }

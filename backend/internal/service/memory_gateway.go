@@ -129,6 +129,13 @@ func (g *MemoryGateway) Event(ctx context.Context, userID int64, eventID string)
 	return g.repo.Get(ctx, userID, eventID)
 }
 
+func (g *MemoryGateway) Overview(ctx context.Context, userID int64) (MemoryArchiveOverview, error) {
+	if !g.EnabledFor(userID) {
+		return MemoryArchiveOverview{}, ErrMemoryNotConfigured
+	}
+	return g.repo.Overview(ctx, userID)
+}
+
 func (g *MemoryGateway) Stop() {
 	if g != nil && g.worker != nil {
 		g.worker.Stop()

@@ -2,6 +2,9 @@ export default {
   dashboard: {
     title: '仪表盘',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
+    statsLoadFailed: '账户概览加载失败，请重试。',
+    chartsLoadFailed: '图表加载失败，请重试。',
+    recentLoadFailed: '最近使用记录加载失败，请重试。',
     balance: '余额',
     apiKeys: 'API 密钥',
     todayRequests: '今日请求',
@@ -338,6 +341,8 @@ export default {
   usage: {
     title: '使用记录',
     description: '查看和分析您的 API 使用历史',
+    statsLoadFailed: '当前筛选的用量汇总加载失败，请重试。',
+    chartsLoadFailed: '当前筛选的图表加载失败，请重试。',
     costDetails: '费用明细',
     tokenDetails: 'Token 明细',
     cacheTtlOverriddenHint: '缓存 TTL Override 已启用',
@@ -852,6 +857,7 @@ export default {
     // TOTP 2FA
     totp: {
       title: '双因素认证 (2FA)',
+      statusLoadFailed: '暂时无法读取双因素认证状态，请重试。',
       description: '使用 Google Authenticator 等应用增强账户安全',
       enabled: '已启用',
       enabledAt: '启用时间',
@@ -1050,7 +1056,7 @@ export default {
     lastWeek: '上周',
     thisMonth: '本月',
     lastMonth: '上月',
-    last24Hours: '近24小时',
+    last24Hours: '近2天',
     last7Days: '近 7 天',
     last14Days: '近 14 天',
     last30Days: '近 30 天',

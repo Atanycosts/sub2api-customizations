@@ -8,6 +8,10 @@
       <div v-if="loading" class="flex items-center justify-center py-12">
         <LoadingSpinner size="lg" />
       </div>
+      <div v-else-if="error" role="alert" class="flex flex-col items-center gap-3 py-8 text-center text-sm text-gray-600 dark:text-gray-300">
+        <p>{{ t('dashboard.recentLoadFailed') }}</p>
+        <button type="button" class="btn btn-secondary" @click="$emit('retry')">{{ t('common.refresh') }}</button>
+      </div>
       <div v-else-if="data.length === 0" class="py-8">
         <EmptyState :title="t('dashboard.noUsageRecords')" :description="t('dashboard.startUsingApi')" />
       </div>
@@ -51,7 +55,9 @@ import type { UsageLog } from '@/types'
 defineProps<{
   data: UsageLog[]
   loading: boolean
+  error?: boolean
 }>()
+defineEmits<{ retry: [] }>()
 const { t } = useI18n()
 const formatCost = (c: number) => c.toFixed(4)
 </script>

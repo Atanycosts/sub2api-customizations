@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 
 const pollOrderStatus = vi.hoisted(() => vi.fn())
 const cancelOrder = vi.hoisted(() => vi.fn())
@@ -43,6 +43,7 @@ vi.mock('qrcode', () => ({
 }))
 
 import PaymentStatusPanel from '../PaymentStatusPanel.vue'
+enableAutoUnmount(afterEach)
 
 const orderFactory = (status: string) => ({
   id: 42,
@@ -71,6 +72,39 @@ describe('PaymentStatusPanel', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it.each([
+    ['FAILED', 'failed', 'payment.result.failed'],
+    ['EXPIRED', 'expired', 'payment.qr.expired'],
+    ['CANCELLED', 'cancelled', 'payment.qr.cancelled'],
+  ])('preserves the distinct %s terminal result and stops polling', async (status, outcome, label) => {
+    pollOrderStatus.mockResolvedValue(orderFactory(status))
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: 'https://pay.example.com/qr/42',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'alipay',
+        orderType: 'balance',
+      },
+      global: { stubs: { Icon: true } },
+    })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(wrapper.text()).toContain(label)
+    expect(wrapper.emitted('settled')).toEqual([[outcome]])
+    expect(wrapper.emitted('success')).toBeUndefined()
+    if (status === 'FAILED') {
+      expect(wrapper.text()).toContain('sub2_20260420abcd1234')
+      expect(wrapper.text()).not.toContain('payment.qr.expired')
+      expect(wrapper.get('button').text()).toBe('payment.result.backToRecharge')
+    }
+    await vi.advanceTimersByTimeAsync(9000)
+    expect(pollOrderStatus).toHaveBeenCalledTimes(1)
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
   it('treats RECHARGING as a successful terminal state', async () => {

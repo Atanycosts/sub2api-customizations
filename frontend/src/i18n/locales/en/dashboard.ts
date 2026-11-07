@@ -2,6 +2,9 @@ export default {
   dashboard: {
     title: 'Dashboard',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
+    statsLoadFailed: 'Could not load your account overview. Please try again.',
+    chartsLoadFailed: 'Could not load this chart. Please try again.',
+    recentLoadFailed: 'Could not load recent usage. Please try again.',
     balance: 'Balance',
     apiKeys: 'API Keys',
     todayRequests: 'Today Requests',
@@ -333,6 +336,8 @@ export default {
   usage: {
     title: 'Usage Records',
     description: 'View and analyze your API usage history',
+    statsLoadFailed: 'Could not load usage totals for the current filters. Please try again.',
+    chartsLoadFailed: 'Could not load this chart for the current filters. Please try again.',
     costDetails: 'Cost Breakdown',
     tokenDetails: 'Token Breakdown',
     cacheTtlOverriddenHint: 'Cache TTL Override enabled',
@@ -848,6 +853,7 @@ export default {
     // TOTP 2FA
     totp: {
       title: 'Two-Factor Authentication (2FA)',
+      statusLoadFailed: 'Could not read your two-factor authentication status. Please try again.',
       description: 'Enhance account security with Google Authenticator or similar apps',
       enabled: 'Enabled',
       enabledAt: 'Enabled at',
@@ -1046,7 +1052,7 @@ export default {
     lastWeek: 'Last Week',
     thisMonth: 'This Month',
     lastMonth: 'Last Month',
-    last24Hours: 'Last 24 Hours',
+    last24Hours: 'Last 2 Days',
     last7Days: 'Last 7 Days',
     last14Days: 'Last 14 Days',
     last30Days: 'Last 30 Days',

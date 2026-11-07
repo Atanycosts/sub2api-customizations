@@ -391,7 +391,7 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
+            <div class="grid grid-cols-2 gap-1 [&>button]:whitespace-nowrap sm:grid-cols-3 md:flex md:items-center">
               <!-- Use Key Button -->
               <button
                 @click="openUseKeyModal(row)"
@@ -1264,17 +1264,17 @@ const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const allColumns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
-  { key: 'id', label: t('keys.id'), sortable: true },
+  { key: 'id', label: t('keys.id'), sortable: true, mobileSecondary: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
   { key: 'group', label: t('keys.group'), sortable: true },
-  { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
+  { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true, mobileSecondary: true },
   { key: 'usage', label: t('keys.usage'), sortable: false },
-  { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
-  { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
+  { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false, mobileSecondary: true },
+  { key: 'expires_at', label: t('keys.expiresAt'), sortable: true, mobileSecondary: true },
   { key: 'status', label: t('common.status'), sortable: true },
-  { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
-  { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
-  { key: 'created_at', label: t('keys.created'), sortable: true },
+  { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true, mobileSecondary: true },
+  { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false, mobileSecondary: true },
+  { key: 'created_at', label: t('keys.created'), sortable: true, mobileSecondary: true },
   { key: 'actions', label: t('common.actions'), sortable: false }
 ])
 

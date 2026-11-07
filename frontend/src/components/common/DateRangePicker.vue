@@ -3,6 +3,7 @@
     <button
       type="button"
       @click="toggle"
+      :aria-expanded="isOpen"
       :class="['date-picker-trigger', isOpen && 'date-picker-trigger-open']"
     >
       <span class="date-picker-icon">
@@ -21,7 +22,7 @@
     </button>
 
     <Transition name="date-picker-dropdown">
-      <div v-if="isOpen" class="date-picker-dropdown">
+      <div v-if="isOpen" class="date-picker-dropdown" :style="dropdownStyle">
         <!-- Quick presets -->
         <div class="date-picker-presets">
           <button
@@ -104,6 +105,7 @@ const { t, locale } = useI18n()
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
+const dropdownStyle = ref<{ width: string; left: string }>({ width: '320px', left: '0px' })
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
 const activePreset = ref<string | null>('last24Hours')
@@ -150,7 +152,8 @@ const presets: DatePreset[] = [
     value: 'last24Hours',
     getRange: () => {
       const end = new Date()
-      const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+      const start = new Date(end)
+      start.setDate(start.getDate() - 1)
       return {
         start: formatDateToString(start),
         end: formatDateToString(end)
@@ -256,7 +259,17 @@ const onDateChange = () => {
   }
 }
 
+const positionDropdown = () => {
+  if (!containerRef.value) return
+  const margin = 12
+  const width = Math.min(320, window.innerWidth - margin * 2)
+  const triggerLeft = containerRef.value.getBoundingClientRect().left
+  const left = Math.max(margin - triggerLeft, Math.min(0, window.innerWidth - margin - triggerLeft - width))
+  dropdownStyle.value = { width: `${width}px`, left: `${left}px` }
+}
+
 const toggle = () => {
+  if (!isOpen.value) positionDropdown()
   isOpen.value = !isOpen.value
 }
 
@@ -311,6 +324,7 @@ watch(
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   document.addEventListener('keydown', handleEscape)
+  window.addEventListener('resize', positionDropdown)
   // Initialize active preset detection
   onDateChange()
 })
@@ -318,6 +332,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   document.removeEventListener('keydown', handleEscape)
+  window.removeEventListener('resize', positionDropdown)
 })
 </script>
 
@@ -357,7 +372,7 @@ onUnmounted(() => {
   @apply border border-gray-200 dark:border-dark-700;
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
-  @apply min-w-[320px];
+  max-width: calc(100vw - 24px);
 }
 
 .date-picker-presets {
@@ -385,7 +400,7 @@ onUnmounted(() => {
 }
 
 .date-picker-field {
-  @apply flex-1;
+  @apply min-w-0 flex-1;
 }
 
 .date-picker-label {

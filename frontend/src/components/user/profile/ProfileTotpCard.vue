@@ -14,6 +14,11 @@
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
 
+      <div v-else-if="statusError" role="alert" class="flex flex-wrap items-center justify-between gap-3 py-4">
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('profile.totp.statusLoadFailed') }}</p>
+        <button type="button" class="btn btn-secondary" @click="loadStatus">{{ t('common.refresh') }}</button>
+      </div>
+
       <!-- Feature disabled globally -->
       <div v-else-if="status && !status.feature_enabled" class="flex items-center gap-4 py-4">
         <div class="flex-shrink-0 rounded-full bg-gray-100 p-3 dark:bg-dark-700">
@@ -112,15 +117,17 @@ const { t } = useI18n()
 
 const loading = ref(true)
 const status = ref<TotpStatus | null>(null)
+const statusError = ref(false)
 const showSetupModal = ref(false)
 const showDisableDialog = ref(false)
 
 const loadStatus = async () => {
   loading.value = true
+  statusError.value = false
   try {
     status.value = await totpAPI.getStatus()
-  } catch (error) {
-    console.error('Failed to load TOTP status:', error)
+  } catch {
+    statusError.value = true
   } finally {
     loading.value = false
   }

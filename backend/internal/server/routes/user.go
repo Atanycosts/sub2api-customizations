@@ -29,6 +29,7 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			user.GET("/memory", h.Memory.Overview)
 			if h.MCPOAuth != nil {
 				user.GET("/mcp/config", h.MCPOAuth.ConnectionConfig)
 				user.GET("/mcp/grants", h.MCPOAuth.ListGrants)

@@ -1,5 +1,28 @@
 <template>
   <div v-if="!isDesktopViewport" class="space-y-3">
+    <div v-if="sortableColumns.length" class="flex min-w-0 items-center gap-2" data-test="mobile-sort">
+      <select
+        :value="sortKey"
+        :aria-label="t('common.sortBy')"
+        class="input min-w-0 flex-1 text-sm"
+        @change="setSort(($event.target as HTMLSelectElement).value, sortOrder)"
+      >
+        <option value="" disabled>{{ t('common.sortBy') }}</option>
+        <option v-for="column in sortableColumns" :key="column.key" :value="column.key">
+          {{ column.label }}
+        </option>
+      </select>
+      <select
+        :value="sortOrder"
+        :disabled="!sortKey"
+        :aria-label="t('common.sortOrder')"
+        class="input w-auto text-sm"
+        @change="setSort(sortKey, ($event.target as HTMLSelectElement).value as 'asc' | 'desc')"
+      >
+        <option value="asc">{{ t('common.ascending') }}</option>
+        <option value="desc">{{ t('common.descending') }}</option>
+      </select>
+    </div>
     <template v-if="loading">
       <div v-for="i in 5" :key="i" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
         <div class="space-y-3">
@@ -68,7 +91,7 @@
             />
           </div>
           <div
-            v-for="column in dataColumns"
+            v-for="column in mobilePrimaryColumns"
             :key="column.key"
             :data-field="column.key"
             class="flex min-w-0 items-start justify-between gap-4"
@@ -82,6 +105,21 @@
               </slot>
             </div>
           </div>
+          <details v-if="mobileSecondaryColumns.length" class="border-t border-gray-100 pt-2 dark:border-dark-700" @click.stop>
+            <summary class="cursor-pointer text-xs font-medium text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-dark-400">
+              {{ t('common.details') }}
+            </summary>
+            <div class="mt-3 space-y-3">
+              <div v-for="column in mobileSecondaryColumns" :key="column.key" :data-field="column.key" class="flex min-w-0 items-start justify-between gap-4">
+                <span class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ column.label }}</span>
+                <div class="min-w-0 max-w-full text-right text-sm text-gray-900 dark:text-gray-100">
+                  <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]" :expanded="actionsExpanded">
+                    {{ column.formatter ? column.formatter(row[column.key], row) : row[column.key] }}
+                  </slot>
+                </div>
+              </div>
+            </div>
+          </details>
           <div v-if="hasActionsColumn" class="border-t border-gray-200 pt-3 dark:border-dark-700">
             <slot name="cell-actions" :row="row" :value="row['actions']" :expanded="actionsExpanded"></slot>
           </div>
@@ -131,7 +169,16 @@
             ]"
             @click="column.sortable && handleSort(column.key)"
           >
-            <div :class="['flex items-center space-x-1', getHeaderContentAlignmentClass(column)]">
+            <component
+              :is="column.sortable ? 'button' : 'div'"
+              :type="column.sortable ? 'button' : undefined"
+              :class="[
+                'flex w-full items-center space-x-1 text-left',
+                column.sortable && 'rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                getHeaderContentAlignmentClass(column)
+              ]"
+              @click.stop="column.sortable && handleSort(column.key)"
+            >
               <slot
                 :name="`header-${column.key}`"
                 :column="column"
@@ -162,7 +209,7 @@
                   <path d="M5 8L1.5 3.5h7L5 8z" />
                 </svg>
               </span>
-            </div>
+            </component>
           </th>
         </tr>
       </thead>
@@ -635,6 +682,9 @@ const resolveStableRowKey = (row: any): string | number | undefined => {
 const resolveRowKey = (row: any, index: number) => resolveStableRowKey(row) ?? index
 
 const dataColumns = computed(() => props.columns.filter((column) => column.key !== 'actions'))
+const mobilePrimaryColumns = computed(() => dataColumns.value.filter((column) => !column.mobileSecondary))
+const mobileSecondaryColumns = computed(() => dataColumns.value.filter((column) => column.mobileSecondary))
+const sortableColumns = computed(() => props.columns.filter((column) => column.sortable))
 const columnsSignature = computed(() =>
   props.columns.map((column) => `${column.key}:${column.sortable ? '1' : '0'}`).join('|')
 )
@@ -668,22 +718,16 @@ watch(actionsExpanded, async () => {
   checkScrollable()
 })
 
-const handleSort = (key: string) => {
-  let newOrder: 'asc' | 'desc' = 'asc'
-  if (sortKey.value === key) {
-    newOrder = sortOrder.value === 'asc' ? 'desc' : 'asc'
-  }
-
+const setSort = (key: string, order: 'asc' | 'desc') => {
+  sortKey.value = key
+  sortOrder.value = order
   if (props.serverSideSort) {
-    // Server-side sort mode: emit event and update internal state for UI feedback
-    sortKey.value = key
-    sortOrder.value = newOrder
-    emit('sort', key, newOrder)
-  } else {
-    // Client-side sort mode: just update internal state
-    sortKey.value = key
-    sortOrder.value = newOrder
+    emit('sort', key, order)
   }
+}
+
+const handleSort = (key: string) => {
+  setSort(key, sortKey.value === key && sortOrder.value === 'asc' ? 'desc' : 'asc')
 }
 
 const sortedData = computed(() => {

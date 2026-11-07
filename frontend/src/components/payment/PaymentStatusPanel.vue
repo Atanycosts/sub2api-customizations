@@ -57,17 +57,21 @@
     </template>
 
     <!-- Expired / Failed -->
-    <template v-else-if="outcome === 'expired'">
-      <div class="card p-6">
+    <template v-else-if="outcome === 'expired' || outcome === 'failed'">
+      <div role="status" class="card p-6">
         <div class="flex flex-col items-center space-y-4 py-4">
           <div class="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
             <svg class="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path v-if="outcome === 'expired'" stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path v-else stroke-linecap="round" stroke-linejoin="round" d="m9 9 6 6m0-6-6 6m12-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t('payment.qr.expired') }}</p>
-          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.expiredDesc') }}</p>
-          <button class="btn btn-primary" @click="handleDone">{{ t('common.confirm') }}</button>
+          <p class="text-lg font-bold text-gray-900 dark:text-white">{{ outcome === 'failed' ? t('payment.result.failed') : t('payment.qr.expired') }}</p>
+          <p class="text-center text-sm text-gray-500 dark:text-gray-400">{{ outcome === 'failed' ? t('payment.result.failedHint') : t('payment.qr.expiredDesc') }}</p>
+          <p v-if="outcome === 'failed'" class="max-w-full break-all text-center text-sm text-gray-600 dark:text-gray-300">
+            {{ t('payment.orders.orderNo') }}: {{ failedOrder?.out_trade_no || props.outTradeNo || `#${props.orderId}` }}
+          </p>
+          <button class="btn btn-primary" @click="handleDone">{{ outcome === 'failed' ? t('payment.result.backToRecharge') : t('common.confirm') }}</button>
         </div>
       </div>
     </template>
@@ -257,7 +261,7 @@ const props = defineProps<{
   mobileAlipayDeepLink?: boolean
 }>()
 
-type PaymentOutcome = 'success' | 'cancelled' | 'expired'
+type PaymentOutcome = 'success' | 'cancelled' | 'expired' | 'failed'
 
 const emit = defineEmits<{ done: []; success: []; settled: [outcome: PaymentOutcome] }>()
 
@@ -271,6 +275,7 @@ const qrUrl = ref('')
 const remainingSeconds = ref(0)
 const cancelling = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
+const failedOrder = ref<PaymentOrder | null>(null)
 const deepLinkState = ref<AlipayDeepLinkState>('idle')
 const deepLinkFallbackVisible = ref(false)
 const paymentCurrency = computed(() => normalizePaymentCurrency(props.currency))
@@ -284,7 +289,7 @@ const localeCode = computed(() => {
   return undefined
 })
 
-// Terminal outcome: null = still active, 'success' | 'cancelled' | 'expired'
+// A terminal outcome stops polling until the user returns to checkout.
 const outcome = ref<PaymentOutcome | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -439,7 +444,11 @@ async function pollStatus() {
     } else if (order.status === 'CANCELLED') {
       cleanup()
       setOutcome('cancelled')
-    } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
+    } else if (order.status === 'FAILED') {
+      cleanup()
+      failedOrder.value = order
+      setOutcome('failed')
+    } else if (order.status === 'EXPIRED') {
       cleanup()
       setOutcome('expired')
     }

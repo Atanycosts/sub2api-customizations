@@ -1,12 +1,20 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
+      <div v-if="endpointStatsLoading" role="status" class="card flex items-center justify-center gap-3 p-8 text-sm text-gray-500 dark:text-gray-400">
+        <LoadingSpinner />
+        {{ t('common.loading') }}
+      </div>
+      <div v-else-if="statsError" role="alert" class="card flex flex-wrap items-center justify-between gap-3 p-6">
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('usage.statsLoadFailed') }}</p>
+        <button type="button" class="btn btn-secondary" @click="loadStats">{{ t('common.refresh') }}</button>
+      </div>
+      <UsageStatsCards v-else-if="usageStats" :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
 
       <div class="space-y-4">
         <div class="card p-4">
           <div class="flex flex-wrap items-center gap-4">
-            <div class="flex items-center gap-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.timeRange') }}:</span>
               <DateRangePicker
                 v-model:start-date="startDate"
@@ -25,6 +33,7 @@
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <ModelDistributionChart
+            v-if="!modelStatsError"
             v-model:metric="modelDistributionMetric"
             :model-stats="requestedModelStats"
             :loading="modelStatsLoading"
@@ -35,7 +44,15 @@
             :start-date="startDate"
             :end-date="endDate"
           />
+          <div v-else role="alert" class="card p-4">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.modelDistribution') }}</h3>
+            <div class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              <p>{{ t('usage.chartsLoadFailed') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadModelStats">{{ t('common.refresh') }}</button>
+            </div>
+          </div>
           <GroupDistributionChart
+            v-if="!chartsError"
             v-model:metric="groupDistributionMetric"
             :group-stats="groupStats"
             :loading="chartsLoading"
@@ -45,10 +62,18 @@
             :start-date="startDate"
             :end-date="endDate"
           />
+          <div v-else role="alert" class="card p-4">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.groupDistribution') }}</h3>
+            <div class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              <p>{{ t('usage.chartsLoadFailed') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadChartData">{{ t('common.refresh') }}</button>
+            </div>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <EndpointDistributionChart
+            v-if="!statsError"
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
             :endpoint-stats="inboundEndpointStats"
@@ -62,7 +87,21 @@
             :start-date="startDate"
             :end-date="endDate"
           />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+          <div v-else role="alert" class="card p-4">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('usage.endpointDistribution') }}</h3>
+            <div class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              <p>{{ t('usage.chartsLoadFailed') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadStats">{{ t('common.refresh') }}</button>
+            </div>
+          </div>
+          <TokenUsageTrend v-if="!chartsError" :trend-data="trendData" :loading="chartsLoading" />
+          <div v-else role="alert" class="card p-4">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.tokenUsageTrend') }}</h3>
+            <div class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              <p>{{ t('usage.chartsLoadFailed') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadChartData">{{ t('common.refresh') }}</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -177,7 +216,12 @@
       </div>
 
       <template v-if="activeTab === 'usage'">
+        <div v-if="logsError" role="alert" class="card flex flex-wrap items-center justify-between gap-3 p-6">
+          <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('usage.failedToLoad') }}</p>
+          <button type="button" class="btn btn-secondary" @click="loadLogs">{{ t('common.refresh') }}</button>
+        </div>
         <UsageTable
+          v-else
           :data="usageLogs"
           :loading="loading"
           :columns="visibleColumns"
@@ -191,7 +235,7 @@
         />
 
         <Pagination
-          v-if="pagination.total > 0"
+          v-if="!logsError && pagination.total > 0"
           :page="pagination.page"
           :total="pagination.total"
           :page-size="pagination.page_size"
@@ -200,19 +244,25 @@
         />
       </template>
 
-      <UserErrorRequestsTable
-        v-else-if="errorViewEnabled"
-        :rows="errorRows"
-        :total="errorTotal"
-        :loading="errorLoading"
-        :page="errorPage"
-        :page-size="errorPageSize"
-        :visible-column-keys="errVisibleColumnKeys"
-        @sort="onErrorSort"
-        @update:page="onErrorPage"
-        @update:pageSize="onErrorPageSize"
-        @ipGeoBatchFailed="handleIpGeoBatchFailed"
-      />
+      <template v-else-if="errorViewEnabled">
+        <div v-if="errorsError" role="alert" class="card flex flex-wrap items-center justify-between gap-3 p-6">
+          <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('usage.errors.failedToLoad') }}</p>
+          <button type="button" class="btn btn-secondary" @click="loadErrors">{{ t('common.refresh') }}</button>
+        </div>
+        <UserErrorRequestsTable
+          v-else
+          :rows="errorRows"
+          :total="errorTotal"
+          :loading="errorLoading"
+          :page="errorPage"
+          :page-size="errorPageSize"
+          :visible-column-keys="errVisibleColumnKeys"
+          @sort="onErrorSort"
+          @update:page="onErrorPage"
+          @update:pageSize="onErrorPageSize"
+          @ipGeoBatchFailed="handleIpGeoBatchFailed"
+        />
+      </template>
     </div>
   </AppLayout>
 
@@ -228,6 +278,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
@@ -274,6 +325,11 @@ const loading = ref(false)
 const chartsLoading = ref(false)
 const modelStatsLoading = ref(false)
 const endpointStatsLoading = ref(false)
+const statsError = ref(false)
+const modelStatsError = ref(false)
+const chartsError = ref(false)
+const logsError = ref(false)
+const errorsError = ref(false)
 const exporting = ref(false)
 const errorRows = ref<UserErrorRequest[]>([])
 const errorLoading = ref(false)
@@ -330,6 +386,7 @@ let abortController: AbortController | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
+let errorsReqSeq = 0
 
 const formatLocalDate = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -448,6 +505,7 @@ const loadLogs = async () => {
   const controller = new AbortController()
   abortController = controller
   loading.value = true
+  logsError.value = false
   try {
     const res = await usageAPI.query(buildUsageListParams(pagination.page, pagination.page_size), {
       signal: controller.signal,
@@ -457,7 +515,8 @@ const loadLogs = async () => {
       pagination.total = res.total
     }
   } catch (error: any) {
-    if (error?.name !== 'AbortError' && error?.code !== 'ERR_CANCELED') {
+    if (!controller.signal.aborted && error?.name !== 'AbortError' && error?.code !== 'ERR_CANCELED') {
+      logsError.value = true
       appStore.showError(t('usage.failedToLoad'))
     }
   } finally {
@@ -468,6 +527,11 @@ const loadLogs = async () => {
 const loadStats = async () => {
   const seq = ++statsReqSeq
   endpointStatsLoading.value = true
+  statsError.value = false
+  usageStats.value = null
+  inboundEndpointStats.value = []
+  upstreamEndpointStats.value = []
+  endpointPathStats.value = []
   try {
     const stats = await usageAPI.getStats(normalizedFilters.value)
     if (seq !== statsReqSeq) return
@@ -475,12 +539,9 @@ const loadStats = async () => {
     inboundEndpointStats.value = stats.endpoints || []
     upstreamEndpointStats.value = []
     endpointPathStats.value = []
-  } catch (error) {
+  } catch {
     if (seq !== statsReqSeq) return
-    console.error('Failed to load usage stats:', error)
-    inboundEndpointStats.value = []
-    upstreamEndpointStats.value = []
-    endpointPathStats.value = []
+    statsError.value = true
   } finally {
     if (seq === statsReqSeq) endpointStatsLoading.value = false
   }
@@ -489,6 +550,8 @@ const loadStats = async () => {
 const loadModelStats = async () => {
   const seq = ++modelStatsReqSeq
   modelStatsLoading.value = true
+  modelStatsError.value = false
+  requestedModelStats.value = []
   try {
     const response = await usageAPI.getDashboardModels({
       ...normalizedFilters.value,
@@ -497,10 +560,9 @@ const loadModelStats = async () => {
     if (seq !== modelStatsReqSeq) return
     requestedModelStats.value = response.models || []
     refreshModelOptions(response.models || [])
-  } catch (error) {
+  } catch {
     if (seq !== modelStatsReqSeq) return
-    console.error('Failed to load model stats:', error)
-    requestedModelStats.value = []
+    modelStatsError.value = true
   } finally {
     if (seq === modelStatsReqSeq) modelStatsLoading.value = false
   }
@@ -509,6 +571,9 @@ const loadModelStats = async () => {
 const loadChartData = async () => {
   const seq = ++chartReqSeq
   chartsLoading.value = true
+  chartsError.value = false
+  trendData.value = []
+  groupStats.value = []
   try {
     const snapshot = await usageAPI.getDashboardSnapshotV2({
       ...normalizedFilters.value,
@@ -520,11 +585,9 @@ const loadChartData = async () => {
     if (seq !== chartReqSeq) return
     trendData.value = snapshot.trend || []
     groupStats.value = snapshot.groups || []
-  } catch (error) {
+  } catch {
     if (seq !== chartReqSeq) return
-    console.error('Failed to load chart data:', error)
-    trendData.value = []
-    groupStats.value = []
+    chartsError.value = true
   } finally {
     if (seq === chartReqSeq) chartsLoading.value = false
   }
@@ -865,13 +928,18 @@ const resetErrorRows = () => {
   if (activeTab.value === 'errors') {
     void loadErrors()
   } else {
+    ++errorsReqSeq
+    errorLoading.value = false
+    errorsError.value = false
     errorRows.value = []
     errorTotal.value = 0
   }
 }
 
 const loadErrors = async () => {
+  const seq = ++errorsReqSeq
   errorLoading.value = true
+  errorsError.value = false
   try {
     const resp = await usageAPI.listMyErrorRequests({
       page: errorPage.value,
@@ -885,13 +953,15 @@ const loadErrors = async () => {
       sort_by: errorSortBy.value,
       sort_order: errorSortOrder.value,
     })
+    if (seq !== errorsReqSeq) return
     errorRows.value = resp.items
     errorTotal.value = resp.total
-  } catch (error) {
-    console.error('[UsageView] loadErrors failed:', error)
+  } catch {
+    if (seq !== errorsReqSeq) return
+    errorsError.value = true
     appStore.showError(t('usage.errors.failedToLoad'))
   } finally {
-    errorLoading.value = false
+    if (seq === errorsReqSeq) errorLoading.value = false
   }
 }
 
@@ -928,6 +998,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   abortController?.abort()
+  ++errorsReqSeq
   document.removeEventListener('click', handleColumnClickOutside)
 })
 

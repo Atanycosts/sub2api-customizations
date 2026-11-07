@@ -42,11 +42,32 @@
               </button>
             </div>
           </nav>
+          <div v-if="settingsSectionOptions.length" class="settings-section-toolbar">
+            <Select
+              :model-value="null"
+              :options="settingsSectionOptions"
+              :placeholder="t('admin.settings.navigation.jumpToSection')"
+              :search-placeholder="t('admin.settings.navigation.searchSections')"
+              :aria-label="t('admin.settings.navigation.jumpToSection')"
+              searchable
+              class="min-w-0 flex-1 sm:max-w-sm"
+              data-testid="settings-section-navigation"
+              @update:model-value="jumpToSettingsSection"
+            />
+            <div v-if="hasCollapsibleSections" class="flex shrink-0 items-center gap-1">
+              <button type="button" class="settings-section-action" @click="setSettingsSectionsExpanded(true)">
+                {{ t('admin.settings.navigation.expandAll') }}
+              </button>
+              <button type="button" class="settings-section-action" @click="setSettingsSectionsExpanded(false)">
+                {{ t('admin.settings.navigation.collapseAll') }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Tab: Security — Admin API Key -->
         <div v-show="activeTab === 'security'" class="space-y-6">
-          <AdminAccessKeysSettings />
+          <AdminAccessKeysSettings id="settings-section-admin-access-keys" class="settings-section-anchor" tabindex="-1" />
           <!-- 已有全权密钥只提供轮换和删除入口。 -->
           <details v-if="adminApiKeyExists" class="card">
             <summary class="cursor-pointer px-6 py-4 font-medium">{{ t("adminAccessKeys.legacy") }}</summary>
@@ -164,17 +185,14 @@
         <!-- Tab: Gateway -->
         <div v-show="activeTab === 'gateway'" class="space-y-6">
           <!-- Overload Cooldown (529) Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.overloadCooldown.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.overloadCooldown.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-overloadCooldown"
+            :title="t('admin.settings.overloadCooldown.title')"
+            :description="t('admin.settings.overloadCooldown.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['overloadCooldown']"
+            :default-expanded="true"
+          >
             <div class="space-y-5 p-6">
               <div
                 v-if="overloadCooldownLoading"
@@ -262,20 +280,17 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Rate Limit Cooldown (429) Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.rateLimit429Cooldown.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.rateLimit429Cooldown.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-rateLimit429Cooldown"
+            :title="t('admin.settings.rateLimit429Cooldown.title')"
+            :description="t('admin.settings.rateLimit429Cooldown.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['rateLimit429Cooldown']"
+            :default-expanded="true"
+          >
             <div class="space-y-5 p-6">
               <div
                 v-if="rateLimit429CooldownLoading"
@@ -369,20 +384,17 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Stream Timeout Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.streamTimeout.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.streamTimeout.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-streamTimeout"
+            :title="t('admin.settings.streamTimeout.title')"
+            :description="t('admin.settings.streamTimeout.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['streamTimeout']"
+            :default-expanded="true"
+          >
             <div class="space-y-5 p-6">
               <!-- Loading State -->
               <div
@@ -549,20 +561,17 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Request Rectifier Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.rectifier.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.rectifier.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-rectifier"
+            :title="t('admin.settings.rectifier.title')"
+            :description="t('admin.settings.rectifier.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['rectifier']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <!-- Loading State -->
               <div
@@ -749,19 +758,16 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
           <!-- Beta Policy Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.betaPolicy.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.betaPolicy.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-betaPolicy"
+            :title="t('admin.settings.betaPolicy.title')"
+            :description="t('admin.settings.betaPolicy.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['betaPolicy']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <!-- Loading State -->
               <div
@@ -1028,19 +1034,15 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
           <!-- OpenAI Fast/Flex Policy Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.openaiFastPolicy.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.openaiFastPolicy.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-openaiFastPolicy"
+            :title="t('admin.settings.openaiFastPolicy.title')"
+            :description="t('admin.settings.openaiFastPolicy.description')"
+            v-model:expanded="expandedSettingsSections['openaiFastPolicy']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <!-- Empty state -->
               <div
@@ -1377,24 +1379,20 @@
                 </p>
               </div>
             </div>
-          </div>
+          </SettingsSection>
         </div>
         <!-- /Tab: Gateway -->
 
         <!-- Tab: Security — Registration, Turnstile, LinuxDo -->
         <div v-show="activeTab === 'security'" class="space-y-6">
           <!-- Registration Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.registration.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.registration.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-registration"
+            :title="t('admin.settings.registration.title')"
+            :description="t('admin.settings.registration.description')"
+            v-model:expanded="expandedSettingsSections['registration']"
+            :default-expanded="true"
+          >
             <div class="space-y-5 p-6">
               <!-- Enable Registration -->
               <div class="flex items-center justify-between">
@@ -1716,20 +1714,16 @@
                 />
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- API Key IP ACL Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.apiKeyAcl.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.apiKeyAcl.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-apiKeyAcl"
+            :title="t('admin.settings.apiKeyAcl.title')"
+            :description="t('admin.settings.apiKeyAcl.description')"
+            v-model:expanded="expandedSettingsSections['apiKeyAcl']"
+            :default-expanded="true"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -1803,27 +1797,17 @@
                 </p>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Panel API Rate Limit Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <div class="flex items-center gap-2">
-                <Icon
-                  name="shield"
-                  size="md"
-                  class="text-primary-500"
-                />
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                  {{ t("admin.settings.panelRateLimit.title") }}
-                </h2>
-              </div>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.panelRateLimit.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-panelRateLimit"
+            :title="t('admin.settings.panelRateLimit.title')"
+            :description="t('admin.settings.panelRateLimit.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['panelRateLimit']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div
                 v-if="panelRateLimitLoading"
@@ -1994,20 +1978,16 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- 人机验证 Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.captcha.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.captcha.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-captcha"
+            :title="t('admin.settings.captcha.title')"
+            :description="t('admin.settings.captcha.description')"
+            v-model:expanded="expandedSettingsSections['captcha']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <!-- Enable Captcha -->
               <div class="flex items-center justify-between">
@@ -2398,20 +2378,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- LinuxDo Connect OAuth 登录 -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.linuxdo.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.linuxdo.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-linuxdo"
+            :title="t('admin.settings.linuxdo.title')"
+            :description="t('admin.settings.linuxdo.description')"
+            v-model:expanded="expandedSettingsSections['linuxdo']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -2516,25 +2492,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- GitHub / Google 邮箱快捷登录 -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ localText("邮箱快捷登录", "Email OAuth Sign-in") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{
-                  localText(
-                    "开启 GitHub 或 Google 邮箱授权登录后，系统会读取已验证邮箱，存在则直接登录，不存在则自动注册。",
-                    "After GitHub or Google email OAuth is enabled, the system reads a verified email, signs in matching users, and auto-registers missing users.",
-                  )
-                }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-email-oauth"
+            :title="localText('邮箱快捷登录', 'Email OAuth Sign-in')"
+            :description="localText( '开启 GitHub 或 Google 邮箱授权登录后，系统会读取已验证邮箱，存在则直接登录，不存在则自动注册。', 'After GitHub or Google email OAuth is enabled, the system reads a verified email, signs in matching users, and auto-registers missing users.', )"
+            v-model:expanded="expandedSettingsSections['email-oauth']"
+            :default-expanded="false"
+          >
             <div class="space-y-6 p-6">
               <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
@@ -2742,20 +2709,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- WeChat Connect OAuth 登录 -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.wechatConnect.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.wechatConnect.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-wechatConnect"
+            :title="t('admin.settings.wechatConnect.title')"
+            :description="t('admin.settings.wechatConnect.description')"
+            v-model:expanded="expandedSettingsSections['wechatConnect']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -3084,20 +3047,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- DingTalk Connect OAuth 登录 -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.dingtalk.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.dingtalk.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-dingtalk"
+            :title="t('admin.settings.dingtalk.title')"
+            :description="t('admin.settings.dingtalk.description')"
+            v-model:expanded="expandedSettingsSections['dingtalk']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -3372,20 +3331,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Generic OIDC OAuth 登录 -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.oidc.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.oidc.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-oidc"
+            :title="t('admin.settings.oidc.title')"
+            :description="t('admin.settings.oidc.description')"
+            v-model:expanded="expandedSettingsSections['oidc']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -3781,14 +3736,14 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
         </div>
         <!-- /Tab: Security — Registration, Turnstile, LinuxDo, OIDC -->
 
         <!-- Tab: Users -->
         <div v-show="activeTab === 'users'" class="space-y-6">
           <!-- Default Settings -->
-          <div class="card">
+          <div id="settings-section-defaults" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -4061,7 +4016,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div id="settings-section-authSourceDefaults" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -4404,17 +4359,13 @@
         <!-- Tab: Gateway — Claude Code, Scheduling -->
         <div v-show="activeTab === 'gateway'" class="space-y-6">
           <!-- Claude Code Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.claudeCode.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.claudeCode.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-claudeCode"
+            :title="t('admin.settings.claudeCode.title')"
+            :description="t('admin.settings.claudeCode.description')"
+            v-model:expanded="expandedSettingsSections['claudeCode']"
+            :default-expanded="false"
+          >
             <div class="p-6">
               <div>
                 <label
@@ -4453,17 +4404,15 @@
                 </p>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Codex Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.gatewayForwarding.codexHardeningTitle") }}
-              </h2>
-            </div>
+          <SettingsSection
+            id="settings-section-gatewayForwarding-codexHardeningTitle"
+            :title="t('admin.settings.gatewayForwarding.codexHardeningTitle')"
+            v-model:expanded="expandedSettingsSections['gatewayForwarding-codexHardeningTitle']"
+            :default-expanded="false"
+          >
             <div class="p-6 space-y-4">
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -4701,20 +4650,18 @@
                   </button>
                 </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Upstream Billing Probe Settings -->
-          <div class="card" data-testid="upstream-billing-probe-settings">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.upstreamBillingProbe.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.upstreamBillingProbe.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-upstreamBillingProbe"
+            data-testid="upstream-billing-probe-settings"
+            :title="t('admin.settings.upstreamBillingProbe.title')"
+            :description="t('admin.settings.upstreamBillingProbe.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['upstreamBillingProbe']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div
                 v-if="upstreamBillingProbeLoading"
@@ -4787,18 +4734,18 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Ollama Cloud Usage Settings -->
-          <div class="card" data-testid="ollama-cloud-usage-global-settings">
-            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.ollamaCloudUsage.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.ollamaCloudUsage.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-ollamaCloudUsage"
+            data-testid="ollama-cloud-usage-global-settings"
+            :title="t('admin.settings.ollamaCloudUsage.title')"
+            :description="t('admin.settings.ollamaCloudUsage.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['ollamaCloudUsage']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div v-if="ollamaCloudUsageLoading" class="flex items-center gap-2 text-gray-500">
                 <div class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"></div>
@@ -4871,18 +4818,18 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- OpenCode Go Usage Settings -->
-          <div class="card" data-testid="opencode-go-usage-global-settings">
-            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.opencodeGoUsage.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.opencodeGoUsage.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-opencodeGoUsage"
+            data-testid="opencode-go-usage-global-settings"
+            :title="t('admin.settings.opencodeGoUsage.title')"
+            :description="t('admin.settings.opencodeGoUsage.description')"
+            independent
+            v-model:expanded="expandedSettingsSections['opencodeGoUsage']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div v-if="opencodeGoUsageLoading" class="flex items-center gap-2 text-gray-500">
                 <div class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"></div>
@@ -4955,20 +4902,16 @@
                 </div>
               </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Gateway Scheduling Settings -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.scheduling.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.scheduling.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-scheduling"
+            :title="t('admin.settings.scheduling.title')"
+            :description="t('admin.settings.scheduling.description')"
+            v-model:expanded="expandedSettingsSections['scheduling']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -5234,20 +5177,16 @@
                 </div>
               </div>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Gateway Forwarding Behavior -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.gatewayForwarding.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.gatewayForwarding.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-gatewayForwarding"
+            :title="t('admin.settings.gatewayForwarding.title')"
+            :description="t('admin.settings.gatewayForwarding.description')"
+            v-model:expanded="expandedSettingsSections['gatewayForwarding']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
               <div class="grid gap-5 border-b border-gray-100 pb-5 dark:border-dark-700 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                 <div>
@@ -5878,21 +5817,27 @@
               </div>
 
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Web Search Emulation -->
-          <div class="card">
-            <div
-              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-            >
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.webSearchEmulation.title") }}
-              </h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.webSearchEmulation.description") }}
-              </p>
-            </div>
+          <SettingsSection
+            id="settings-section-webSearchEmulation"
+            :title="t('admin.settings.webSearchEmulation.title')"
+            :description="t('admin.settings.webSearchEmulation.description')"
+            v-model:expanded="expandedSettingsSections['webSearchEmulation']"
+            :default-expanded="false"
+          >
             <div class="space-y-5 p-6">
+              <div v-if="webSearchLoading" class="text-sm text-gray-500 dark:text-gray-400">
+                {{ t('common.loading') }}
+              </div>
+              <div v-else-if="webSearchLoadError" role="alert" class="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400" data-testid="web-search-load-error">
+                <span>{{ t('admin.settings.webSearchEmulation.loadFailed') }}</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="web-search-retry" @click="loadWebSearchConfig">
+                  {{ t('common.tryAgain') }}
+                </button>
+              </div>
+              <template v-else-if="webSearchLoaded">
               <!-- Global Toggle -->
               <div class="flex items-center justify-between">
                 <div>
@@ -6230,8 +6175,9 @@
                   </div>
                 </div>
               </div>
+              </template>
             </div>
-          </div>
+          </SettingsSection>
 
           <!-- Web Search Test Dialog -->
           <div
@@ -6317,15 +6263,13 @@
           </div>
 
         <!-- Usage Records Settings -->
-        <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.settings.usageRecords.title') }}
-            </h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.settings.usageRecords.description') }}
-            </p>
-          </div>
+        <SettingsSection
+            id="settings-section-usageRecords"
+            :title="t('admin.settings.usageRecords.title')"
+            :description="t('admin.settings.usageRecords.description')"
+            v-model:expanded="expandedSettingsSections['usageRecords']"
+            :default-expanded="false"
+          >
           <div class="space-y-4 p-6">
             <!-- User error requests visibility -->
             <div class="flex items-center justify-between">
@@ -6343,14 +6287,14 @@
               </label>
             </div>
           </div>
-        </div>
+        </SettingsSection>
         </div>
         <!-- /Tab: Gateway — Claude Code, Scheduling -->
 
         <!-- Tab: General -->
         <div v-show="activeTab === 'general'" class="space-y-6">
           <!-- Site Settings -->
-          <div class="card">
+          <div id="settings-section-site" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -6717,7 +6661,7 @@
           </div>
 
           <!-- Custom Menu Items -->
-          <div class="card">
+          <div id="settings-section-customMenu" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -6922,7 +6866,7 @@
 
 	        <!-- Tab: Login Agreement -->
 	        <div v-show="activeTab === 'agreement'" class="space-y-6">
-	          <div class="card">
+	          <div id="settings-section-login-agreement" class="card settings-section-anchor" tabindex="-1">
 	            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
 	              <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 	                <div>
@@ -7125,7 +7069,7 @@
 	        <!-- Tab: Features (功能开关) -->
         <div v-show="activeTab === 'features'" class="space-y-6">
 
-        <div class="card">
+        <div id="settings-section-features-channelMonitor" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.channelMonitor.title') }}
@@ -7256,7 +7200,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div id="settings-section-features-availableChannels" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.availableChannels.title') }}
@@ -7289,7 +7233,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div id="settings-section-features-modelPlaza" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.modelPlaza.title') }}
@@ -7339,7 +7283,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div id="settings-section-features-siteBillingMode" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.siteBillingMode.title') }}
@@ -7369,7 +7313,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div id="settings-section-features-pluginManagement" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.pluginManagement.title') }}
@@ -7393,7 +7337,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div id="settings-section-features-riskControl" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.riskControl.title') }}
@@ -7464,7 +7408,7 @@
         </div>
 
         <!-- Affiliate (邀请返利) feature card -->
-        <div class="card">
+        <div id="settings-section-features-affiliate" class="card settings-section-anchor" tabindex="-1">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.affiliate.title') }}
@@ -7881,7 +7825,7 @@
         <!-- Tab: Payment -->
         <div v-show="activeTab === 'payment'" class="space-y-6">
           <!-- Payment System Settings -->
-          <div class="card">
+          <div id="settings-section-payment" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8412,7 +8356,7 @@
           </div>
 
           <!-- 充值优惠阶梯（独立卡片，与服务商管理同级） -->
-          <RechargeBonusTierEditor
+          <RechargeBonusTierEditor id="settings-section-recharge-bonus" class="settings-section-anchor" tabindex="-1"
             v-if="form.payment_enabled"
             v-model="form.payment_recharge_bonus_tiers"
             v-model:mode="form.payment_recharge_bonus_mode"
@@ -8420,7 +8364,7 @@
           />
 
           <!-- Provider Management -->
-          <PaymentProviderList
+          <PaymentProviderList id="settings-section-payment-providers" class="settings-section-anchor" tabindex="-1"
             v-if="form.payment_enabled"
             :providers="providers"
             :loading="providersLoading"
@@ -8461,7 +8405,7 @@
           </div>
 
           <!-- SMTP Settings - Only show when email verification is enabled -->
-          <div v-if="form.email_verify_enabled" class="card">
+          <div v-if="form.email_verify_enabled" id="settings-section-smtp" class="card settings-section-anchor" tabindex="-1">
             <div
               class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8624,7 +8568,7 @@
           </div>
 
           <!-- Send Test Email - Only show when email verification is enabled -->
-          <div v-if="form.email_verify_enabled" class="card">
+          <div v-if="form.email_verify_enabled" id="settings-section-testEmail" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8691,7 +8635,7 @@
           </div>
 
           <!-- 订阅到期提醒 -->
-          <div class="card">
+          <div id="settings-section-subscriptionExpiryNotify" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8719,10 +8663,10 @@
             </div>
           </div>
 
-          <EmailTemplateEditor />
+          <EmailTemplateEditor id="settings-section-email-templates" class="settings-section-anchor" tabindex="-1" />
 
           <!-- Balance Low Notification -->
-          <div class="card">
+          <div id="settings-section-balanceNotify" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8782,7 +8726,7 @@
           </div>
 
           <!-- Account Quota Notification -->
-          <div class="card">
+          <div id="settings-section-quotaNotify" class="card settings-section-anchor" tabindex="-1">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -8864,8 +8808,16 @@
           <BackupSettings />
         </div>
 
-        <!-- Save Button -->
-        <div v-show="activeTab !== 'backup'" class="flex justify-end">
+        <!-- Page-level save stays reachable while browsing long settings tabs. -->
+        <div v-show="activeTab !== 'backup'" class="settings-save-bar">
+          <span
+            role="status"
+            class="min-w-0 text-sm"
+            :class="hasPendingSettings ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'"
+            data-testid="settings-save-status"
+          >
+            {{ loadFailed ? t('admin.settings.failedToLoad') : hasPendingSettings ? t('admin.settings.navigation.pendingChanges') : webSearchLoadError ? t('admin.settings.webSearchEmulation.loadFailed') : t('admin.settings.navigation.upToDate') }}
+          </span>
           <button
             type="submit"
             :disabled="saving || loadFailed"
@@ -8894,7 +8846,7 @@
             {{
               saving
                 ? t("admin.settings.saving")
-                : t("admin.settings.saveSettings")
+                : t("admin.settings.navigation.savePage")
             }}
           </button>
         </div>
@@ -8938,7 +8890,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, nextTick, onMounted, watch } from "vue";
 import { listPlatformIds } from "@/constants/platformCatalog";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
@@ -9013,6 +8965,7 @@ import {
   stepUpBlockReason,
 } from "@/composables/useStepUp";
 import AdminAccessKeysSettings from "@/components/admin/settings/AdminAccessKeysSettings.vue";
+import SettingsSection from "@/components/admin/settings/SettingsSection.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
@@ -9077,6 +9030,86 @@ const settingsTabs = [
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
 ];
+
+
+const expandedSettingsSections = reactive<Record<string, boolean>>({});
+const settingsSections = computed(() => [
+  { id: 'admin-access-keys', tab: 'security', label: t('adminAccessKeys.title'), independent: true },
+  { id: 'overloadCooldown', tab: 'gateway', label: t("admin.settings.overloadCooldown.title"), independent: true },
+  { id: 'rateLimit429Cooldown', tab: 'gateway', label: t("admin.settings.rateLimit429Cooldown.title"), independent: true },
+  { id: 'streamTimeout', tab: 'gateway', label: t("admin.settings.streamTimeout.title"), independent: true },
+  { id: 'rectifier', tab: 'gateway', label: t("admin.settings.rectifier.title"), independent: true },
+  { id: 'betaPolicy', tab: 'gateway', label: t("admin.settings.betaPolicy.title"), independent: true },
+  { id: 'openaiFastPolicy', tab: 'gateway', label: t("admin.settings.openaiFastPolicy.title") },
+  { id: 'registration', tab: 'security', label: t("admin.settings.registration.title") },
+  { id: 'apiKeyAcl', tab: 'security', label: t("admin.settings.apiKeyAcl.title") },
+  { id: 'panelRateLimit', tab: 'security', label: t("admin.settings.panelRateLimit.title"), independent: true },
+  { id: 'captcha', tab: 'security', label: t("admin.settings.captcha.title") },
+  { id: 'linuxdo', tab: 'security', label: t("admin.settings.linuxdo.title") },
+  { id: 'email-oauth', tab: 'security', label: localText("邮箱快捷登录", "Email OAuth Sign-in") },
+  { id: 'wechatConnect', tab: 'security', label: t("admin.settings.wechatConnect.title") },
+  { id: 'dingtalk', tab: 'security', label: t("admin.settings.dingtalk.title") },
+  { id: 'oidc', tab: 'security', label: t("admin.settings.oidc.title") },
+  { id: 'defaults', tab: 'users', label: t("admin.settings.defaults.title") },
+  { id: 'authSourceDefaults', tab: 'users', label: t("admin.settings.authSourceDefaults.title") },
+  { id: 'claudeCode', tab: 'gateway', label: t("admin.settings.claudeCode.title") },
+  { id: 'gatewayForwarding-codexHardeningTitle', tab: 'gateway', label: t("admin.settings.gatewayForwarding.codexHardeningTitle") },
+  { id: 'upstreamBillingProbe', tab: 'gateway', label: t("admin.settings.upstreamBillingProbe.title"), independent: true },
+  { id: 'ollamaCloudUsage', tab: 'gateway', label: t("admin.settings.ollamaCloudUsage.title"), independent: true },
+  { id: 'opencodeGoUsage', tab: 'gateway', label: t("admin.settings.opencodeGoUsage.title"), independent: true },
+  { id: 'scheduling', tab: 'gateway', label: t("admin.settings.scheduling.title") },
+  { id: 'gatewayForwarding', tab: 'gateway', label: t("admin.settings.gatewayForwarding.title") },
+  { id: 'webSearchEmulation', tab: 'gateway', label: t("admin.settings.webSearchEmulation.title") },
+  { id: 'usageRecords', tab: 'gateway', label: t('admin.settings.usageRecords.title') },
+  { id: 'site', tab: 'general', label: t("admin.settings.site.title") },
+  { id: 'customMenu', tab: 'general', label: t("admin.settings.customMenu.title") },
+  { id: 'login-agreement', tab: 'agreement', label: localText("登录条款确认", "Login agreement") },
+  { id: 'features-channelMonitor', tab: 'features', label: t('admin.settings.features.channelMonitor.title') },
+  { id: 'features-availableChannels', tab: 'features', label: t('admin.settings.features.availableChannels.title') },
+  { id: 'features-modelPlaza', tab: 'features', label: t('admin.settings.features.modelPlaza.title') },
+  { id: 'features-siteBillingMode', tab: 'features', label: t('admin.settings.features.siteBillingMode.title') },
+  { id: 'features-pluginManagement', tab: 'features', label: t('admin.settings.features.pluginManagement.title') },
+  { id: 'features-riskControl', tab: 'features', label: t('admin.settings.features.riskControl.title') },
+  { id: 'features-affiliate', tab: 'features', label: t('admin.settings.features.affiliate.title') },
+  { id: 'payment', tab: 'payment', label: t("admin.settings.payment.title") },
+  { id: 'recharge-bonus', tab: 'payment', label: t('admin.settings.payment.rechargeBonus.label') },
+  { id: 'payment-providers', tab: 'payment', label: t('admin.settings.payment.providerManagement'), independent: true },
+  { id: 'smtp', tab: 'email', label: t("admin.settings.smtp.title"), visible: form.email_verify_enabled },
+  { id: 'testEmail', tab: 'email', label: t("admin.settings.testEmail.title"), visible: form.email_verify_enabled },
+  { id: 'subscriptionExpiryNotify', tab: 'email', label: t("admin.settings.subscriptionExpiryNotify.title") },
+  { id: 'email-templates', tab: 'email', label: t('admin.settings.emailTemplates.title'), independent: true },
+  { id: 'balanceNotify', tab: 'email', label: t("admin.settings.balanceNotify.title") },
+  { id: 'quotaNotify', tab: 'email', label: t("admin.settings.quotaNotify.title") },
+]);
+const activeSettingsSections = computed(() =>
+  settingsSections.value.filter(section => section.tab === activeTab.value && section.visible !== false),
+);
+const settingsSectionOptions = computed(() =>
+  activeSettingsSections.value.map(section => ({
+    value: section.id,
+    label: section.independent
+      ? `${section.label} · ${t('admin.settings.navigation.independentSave')}`
+      : section.label,
+  })),
+);
+const hasCollapsibleSections = computed(() =>
+  activeTab.value === 'gateway' || activeTab.value === 'security',
+);
+
+async function jumpToSettingsSection(value: string | number | boolean | null | undefined): Promise<void> {
+  if (typeof value !== 'string') return;
+  expandedSettingsSections[value] = true;
+  await nextTick();
+  const section = document.getElementById('settings-section-' + value);
+  section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  section?.focus({ preventScroll: true });
+}
+
+function setSettingsSectionsExpanded(expanded: boolean): void {
+  for (const section of activeSettingsSections.value) {
+    expandedSettingsSections[section.id] = expanded;
+  }
+}
 
 const settingsTabKeyboardActions = {
   ArrowLeft: -1,
@@ -10261,6 +10294,9 @@ const webSearchProxies = ref<Proxy[]>([]);
 
 // Web Search Emulation config (loaded/saved separately)
 const DEFAULT_WEB_SEARCH_QUOTA_LIMIT = 1000;
+const webSearchLoading = ref(false);
+const webSearchLoaded = ref(false);
+const webSearchLoadError = ref(false);
 
 const webSearchConfig = reactive<WebSearchEmulationConfig>({
   enabled: false,
@@ -10386,22 +10422,29 @@ async function testWebSearchProvider() {
 }
 
 async function loadWebSearchConfig() {
+  webSearchLoading.value = true;
+  webSearchLoaded.value = false;
+  webSearchLoadError.value = false;
   try {
     const [resp, proxiesResp] = await Promise.all([
       adminAPI.settings.getWebSearchEmulationConfig(),
       adminAPI.proxies.list().catch(() => ({ items: [] as Proxy[] })),
     ]);
-    if (resp) {
-      webSearchConfig.enabled = resp.enabled || false;
-      webSearchConfig.providers = resp.providers || [];
-    }
+    webSearchConfig.enabled = resp.enabled;
+    webSearchConfig.providers = resp.providers;
     webSearchProxies.value = proxiesResp.items || [];
+    webSearchLoaded.value = true;
   } catch (err: unknown) {
-    // 404 is expected when config hasn't been created yet; show error for other failures
-    const status = (err as { status?: number })?.status;
-    if (status !== 404 && status !== undefined) {
-      appStore.showError(extractApiErrorMessage(err, t("common.error")));
+    if ((err as { status?: number })?.status === 404) {
+      webSearchConfig.enabled = false;
+      webSearchConfig.providers = [];
+      webSearchLoaded.value = true;
+    } else {
+      webSearchLoadError.value = true;
     }
+  } finally {
+    if (webSearchLoaded.value) savedWebSearchSnapshot.value = webSearchSnapshot.value;
+    webSearchLoading.value = false;
   }
 }
 
@@ -11007,6 +11050,39 @@ const claudeSyncedVersionLabel = computed(() => {
   });
 });
 
+// Only the state submitted by the page save participates in this status.
+// Section-specific APIs (cooldown, rate limits, templates, providers) save independently.
+const pageSettingsSnapshot = computed(() => JSON.stringify({
+  form,
+  authSourceDefaults,
+  codexBlacklist: codexBlacklistRows.value,
+  codexWhitelist: codexWhitelistRows.value,
+  codexFingerprint: codexFingerprintRows.value,
+  claudePromptBlocks: serializeClaudeOAuthSystemPromptBlocksToJSON(claudeOAuthSystemPromptBlocks.value),
+  registrationEmailSuffixes: registrationEmailSuffixWhitelistTags.value,
+  tablePageSizes: tablePageSizeOptionsInput.value,
+  openaiFastPolicy: openaiFastPolicyLoaded.value ? openaiFastPolicyForm.rules : null,
+}));
+const webSearchSnapshot = computed(() => JSON.stringify({
+  enabled: webSearchConfig.enabled,
+  providers: webSearchConfig.providers.map(provider => ({
+    type: provider.type,
+    api_key: provider.api_key,
+    quota_limit: provider.quota_limit,
+    subscribed_at: provider.subscribed_at,
+    proxy_id: provider.proxy_id,
+    expires_at: provider.expires_at,
+  })),
+}));
+const savedPageSettingsSnapshot = ref<string | null>(null);
+const savedWebSearchSnapshot = ref<string | null>(null);
+const hasPendingSettings = computed(() =>
+  savedPageSettingsSnapshot.value !== null && (
+    pageSettingsSnapshot.value !== savedPageSettingsSnapshot.value ||
+    (webSearchLoaded.value && webSearchSnapshot.value !== savedWebSearchSnapshot.value)
+  ),
+);
+
 async function loadSettings() {
   loading.value = true;
   loadFailed.value = false;
@@ -11185,6 +11261,8 @@ async function loadSettings() {
 
     // Load web search emulation config separately
     await loadWebSearchConfig();
+    await nextTick();
+    savedPageSettingsSnapshot.value = pageSettingsSnapshot.value;
   } catch (error: unknown) {
     loadFailed.value = true;
     appStore.showError(
@@ -11807,86 +11885,96 @@ async function saveSettings() {
     );
     appendAuthSourceDefaultsToUpdateRequest(payload, authSourceDefaults);
 
+    const submittedPageSnapshot = pageSettingsSnapshot.value;
     const updated = await settingsStepUp.run(() =>
       adminAPI.settings.updateSettings(payload),
     );
-    for (const [key, value] of Object.entries(updated)) {
-      if (key === "openai_fast_policy_settings") continue;
-      if (value !== null && value !== undefined) {
-        (form as Record<string, unknown>)[key] = value;
+    // Keep edits made while the request was in flight; only this submission is saved.
+    if (pageSettingsSnapshot.value === submittedPageSnapshot) {
+      for (const [key, value] of Object.entries(updated)) {
+        if (key === "openai_fast_policy_settings") continue;
+        if (value !== null && value !== undefined) {
+          (form as Record<string, unknown>)[key] = value;
+        }
       }
-    }
-    if (updated.openai_oauth_scheduling_rate_multiplier === null) {
-      form.openai_oauth_scheduling_rate_multiplier = null;
-    }
-    Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
-    form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
-    form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
-      updated.account_scheduling_thresholds,
-    );
-    registrationEmailSuffixWhitelistTags.value =
-      normalizeRegistrationEmailSuffixDomains(
-        updated.registration_email_suffix_whitelist,
+      if (updated.openai_oauth_scheduling_rate_multiplier === null) {
+        form.openai_oauth_scheduling_rate_multiplier = null;
+      }
+      Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
+      form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
+      form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
+        updated.account_scheduling_thresholds,
       );
-    form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
-      updated.forwarded_client_ip_headers,
-    );
-    forwardedClientIpHeaderDraft.value = "";
-    tablePageSizeOptionsInput.value = formatTablePageSizeOptions(
-      Array.isArray(updated.table_page_size_options)
-        ? updated.table_page_size_options
-        : [10, 20, 50, 100],
-    );
-    registrationEmailSuffixWhitelistDraft.value = "";
-    form.smtp_password = "";
-    smtpPasswordManuallyEdited.value = false;
-    form.turnstile_secret_key = "";
-    form.aliyun_captcha_access_key_secret = "";
-    form.linuxdo_connect_client_secret = "";
-    form.dingtalk_connect_client_secret = "";
-    form.github_oauth_client_secret = "";
-    form.google_oauth_client_secret = "";
-    form.wechat_connect_app_secret = "";
-    form.wechat_connect_open_app_secret = "";
-    form.wechat_connect_mp_app_secret = "";
-    form.wechat_connect_mobile_app_secret = "";
-    const updatedWechatCapabilities = resolveWeChatConnectModeCapabilities(
-      updated.wechat_connect_open_enabled,
-      updated.wechat_connect_mp_enabled,
-      updated.wechat_connect_mobile_enabled,
-      updated.wechat_connect_mode,
-    );
-    form.wechat_connect_open_enabled = updatedWechatCapabilities.openEnabled;
-    form.wechat_connect_mp_enabled = updatedWechatCapabilities.mpEnabled;
-    form.wechat_connect_mobile_enabled =
-      updatedWechatCapabilities.mobileEnabled;
-    form.wechat_connect_mode = deriveWeChatConnectStoredMode(
-      updatedWechatCapabilities.openEnabled,
-      updatedWechatCapabilities.mpEnabled,
-      updatedWechatCapabilities.mobileEnabled,
-      updated.wechat_connect_mode,
-    );
-    form.wechat_connect_scopes = defaultWeChatConnectScopesForMode(
-      form.wechat_connect_mode,
-    );
-    form.oidc_connect_client_secret = "";
-    // Refresh OpenAI fast/flex policy from server response
-    if (
-      updated.openai_fast_policy_settings &&
-      Array.isArray(updated.openai_fast_policy_settings.rules)
-    ) {
-      openaiFastPolicyForm.rules =
-        updated.openai_fast_policy_settings.rules.map((rule) => ({
-          ...rule,
-          user_ids: rule.user_ids ? [...rule.user_ids] : [],
-          model_whitelist: rule.model_whitelist
-            ? [...rule.model_whitelist]
-            : [],
-        }));
-      openaiFastPolicyLoaded.value = true;
+      registrationEmailSuffixWhitelistTags.value =
+        normalizeRegistrationEmailSuffixDomains(
+          updated.registration_email_suffix_whitelist,
+        );
+      form.forwarded_client_ip_headers = normalizeForwardedClientIpHeaders(
+        updated.forwarded_client_ip_headers,
+      );
+      forwardedClientIpHeaderDraft.value = "";
+      tablePageSizeOptionsInput.value = formatTablePageSizeOptions(
+        Array.isArray(updated.table_page_size_options)
+          ? updated.table_page_size_options
+          : [10, 20, 50, 100],
+      );
+      registrationEmailSuffixWhitelistDraft.value = "";
+      form.smtp_password = "";
+      smtpPasswordManuallyEdited.value = false;
+      form.turnstile_secret_key = "";
+      form.aliyun_captcha_access_key_secret = "";
+      form.linuxdo_connect_client_secret = "";
+      form.dingtalk_connect_client_secret = "";
+      form.github_oauth_client_secret = "";
+      form.google_oauth_client_secret = "";
+      form.wechat_connect_app_secret = "";
+      form.wechat_connect_open_app_secret = "";
+      form.wechat_connect_mp_app_secret = "";
+      form.wechat_connect_mobile_app_secret = "";
+      const updatedWechatCapabilities = resolveWeChatConnectModeCapabilities(
+        updated.wechat_connect_open_enabled,
+        updated.wechat_connect_mp_enabled,
+        updated.wechat_connect_mobile_enabled,
+        updated.wechat_connect_mode,
+      );
+      form.wechat_connect_open_enabled = updatedWechatCapabilities.openEnabled;
+      form.wechat_connect_mp_enabled = updatedWechatCapabilities.mpEnabled;
+      form.wechat_connect_mobile_enabled =
+        updatedWechatCapabilities.mobileEnabled;
+      form.wechat_connect_mode = deriveWeChatConnectStoredMode(
+        updatedWechatCapabilities.openEnabled,
+        updatedWechatCapabilities.mpEnabled,
+        updatedWechatCapabilities.mobileEnabled,
+        updated.wechat_connect_mode,
+      );
+      form.wechat_connect_scopes = defaultWeChatConnectScopesForMode(
+        form.wechat_connect_mode,
+      );
+      form.oidc_connect_client_secret = "";
+      // Refresh OpenAI fast/flex policy from server response
+      if (
+        updated.openai_fast_policy_settings &&
+        Array.isArray(updated.openai_fast_policy_settings.rules)
+      ) {
+        openaiFastPolicyForm.rules =
+          updated.openai_fast_policy_settings.rules.map((rule) => ({
+            ...rule,
+            user_ids: rule.user_ids ? [...rule.user_ids] : [],
+            model_whitelist: rule.model_whitelist
+              ? [...rule.model_whitelist]
+              : [],
+          }));
+        openaiFastPolicyLoaded.value = true;
+      }
+      await nextTick();
+      savedPageSettingsSnapshot.value = pageSettingsSnapshot.value;
+    } else {
+      savedPageSettingsSnapshot.value = submittedPageSnapshot;
     }
-    // Save web search emulation config separately (errors handled internally)
-    const wsOk = await saveWebSearchConfig();
+    // Web search keeps its own pending state if this second request fails.
+    const submittedWebSearchSnapshot = webSearchSnapshot.value;
+    const wsOk = webSearchLoaded.value ? await saveWebSearchConfig() : true;
+    if (wsOk && webSearchLoaded.value) savedWebSearchSnapshot.value = submittedWebSearchSnapshot;
     // Refresh cached settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true);
     await adminSettingsStore.fetch(true);
@@ -13285,6 +13373,27 @@ watch(
   box-shadow:
     0 12px 28px rgb(15 23 42 / 0.07),
     0 1px 0 rgb(255 255 255 / 0.9) inset;
+}
+
+.settings-section-toolbar {
+  @apply mt-1 flex items-center justify-between gap-2 border-t border-gray-100 px-1 pt-2 dark:border-dark-700;
+}
+
+.settings-section-action {
+  @apply rounded-lg px-2 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-300 dark:hover:bg-dark-700;
+}
+
+.settings-section-anchor {
+  scroll-margin-top: 12rem;
+}
+
+.settings-save-bar {
+  @apply sticky z-20 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-md dark:border-dark-700 dark:bg-dark-900/95;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.settings-save-bar .btn {
+  @apply shrink-0;
 }
 
 .settings-tabs-scroll {

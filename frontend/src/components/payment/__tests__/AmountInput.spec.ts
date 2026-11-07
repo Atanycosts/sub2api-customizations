@@ -15,6 +15,20 @@ function mountInput(value: number | null = null) {
 }
 
 describe('recharge amount input', () => {
+  it.each([
+    ['CNY', '¥'],
+    ['USD', '$'],
+    ['EUR', '€'],
+    ['HKD', 'HK$'],
+  ])('labels the entered amount with its payment currency %s', (currency, symbol) => {
+    const wrapper = mount(AmountInput, { props: { modelValue: 10, currency } })
+    expect(wrapper.findAll('label').map(label => label.text())).toEqual([
+      `payment.quickAmounts (${currency})`,
+      `payment.customAmount (${currency})`,
+    ])
+    expect(wrapper.get('input').element.previousElementSibling?.textContent?.trim()).toBe(symbol)
+  })
+
   it.each(['10abc', '10.555', '-10', '1e2'])('restores the accepted amount after rejecting %s', async (value) => {
     const wrapper = mountInput(10)
     const input = wrapper.get('input')

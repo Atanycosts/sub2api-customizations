@@ -131,6 +131,9 @@ export default {
 
   // Key Usage Query Page
   keyUsage: {
+    apiKeyLabel: 'API Key',
+    showKey: 'Show API Key',
+    hideKey: 'Hide API Key',
     title: 'API Key Usage',
     subtitle: 'Enter your API Key to view real-time spending and usage status',
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',

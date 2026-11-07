@@ -41,6 +41,20 @@ type MemoryArchiveReceipt struct {
 	LastErrorCode string             `json:"last_error_code,omitempty"`
 }
 
+type MemoryArchiveActivity struct {
+	EventID   string             `json:"event_id"`
+	State     MemoryArchiveState `json:"state"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
+type MemoryArchiveOverview struct {
+	Archived  int64                   `json:"archived"`
+	Pending   int64                   `json:"pending"`
+	Attention int64                   `json:"attention"`
+	Recent    []MemoryArchiveActivity `json:"recent"`
+}
+
 // LeaseToken is unique to one claim, including when a worker reclaims its own
 // expired event. Generation fences user-wide deletion/block operations.
 type MemoryArchiveEvent struct {
@@ -56,6 +70,7 @@ type MemoryArchiveEvent struct {
 type MemoryArchiveRepository interface {
 	Enqueue(context.Context, MemoryTurn) (MemoryArchiveReceipt, error)
 	Get(context.Context, int64, string) (MemoryArchiveReceipt, error)
+	Overview(context.Context, int64) (MemoryArchiveOverview, error)
 	// Claim may only admit users explicitly routed to this worker's provider.
 	// An empty scope claims nothing, never every tenant in a shared database.
 	Claim(context.Context, string, int, time.Duration, int, []int64) ([]MemoryArchiveEvent, error)

@@ -3,7 +3,7 @@
     <!-- Date Range Filter -->
     <div class="card p-4">
       <div class="flex flex-wrap items-center gap-4">
-        <div class="flex items-center gap-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
           <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('dashboard.timeRange') }}:</span>
           <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
         </div>
@@ -27,7 +27,11 @@
           <LoadingSpinner size="md" />
         </div>
         <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
-        <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+        <div v-if="modelError && !loading" role="alert" class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+          <p>{{ t('dashboard.chartsLoadFailed') }}</p>
+          <button type="button" class="btn btn-secondary" @click="$emit('retry')">{{ t('common.refresh') }}</button>
+        </div>
+        <div v-else class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
           <div class="h-48 w-48 shrink-0">
             <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('dashboard.noDataAvailable') }}</div>
@@ -58,7 +62,14 @@
       </div>
 
       <!-- Token Usage Trend Chart -->
-      <TokenUsageTrend :trend-data="trend" :loading="loading" />
+      <div v-if="trendError && !loading" role="alert" class="card p-4">
+        <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.tokenUsageTrend') }}</h3>
+        <div class="flex h-48 flex-col items-center justify-center gap-3 text-center text-sm text-gray-600 dark:text-gray-300">
+          <p>{{ t('dashboard.chartsLoadFailed') }}</p>
+          <button type="button" class="btn btn-secondary" @click="$emit('retry')">{{ t('common.refresh') }}</button>
+        </div>
+      </div>
+      <TokenUsageTrend v-else :trend-data="trend" :loading="loading" />
     </div>
   </div>
 </template>
@@ -76,8 +87,8 @@ import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler)
 
-const props = defineProps<{ loading: boolean, startDate: string, endDate: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
-defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh'])
+const props = defineProps<{ loading: boolean, startDate: string, endDate: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[], modelError?: boolean, trendError?: boolean }>()
+defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh', 'retry'])
 const { t } = useI18n()
 
 const modelData = computed(() => !props.models?.length ? null : {

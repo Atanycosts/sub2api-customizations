@@ -15,6 +15,9 @@ const messages: Record<string, string> = {
   'keyUsage.title': 'API Key Usage',
   'keyUsage.subtitle': 'Usage status',
   'keyUsage.placeholder': 'sk-test',
+  'keyUsage.apiKeyLabel': 'API Key',
+  'keyUsage.showKey': 'Show API Key',
+  'keyUsage.hideKey': 'Hide API Key',
   'keyUsage.query': 'Query',
   'keyUsage.querying': 'Querying...',
   'keyUsage.privacyNote': 'Privacy note',
@@ -171,6 +174,34 @@ describe('KeyUsageView daily detail', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('names the API key input and reveal action without querying or losing the value', async () => {
+    const wrapper = mount(KeyUsageView, {
+      global: {
+        stubs: {
+          RouterLink: { template: '<a><slot /></a>' },
+          LocaleSwitcher: true,
+          Icon: true,
+        },
+      },
+    })
+    const input = wrapper.get('#usage-api-key')
+    const button = wrapper.get('button[aria-controls="usage-api-key"]')
+    await input.setValue('sk-example-only')
+
+    expect(input.attributes('aria-label')).toBe('API Key')
+    expect(button.attributes('aria-label')).toBe('Show API Key')
+    expect(input.attributes('type')).toBe('password')
+    await button.trigger('click')
+    expect(button.attributes('aria-label')).toBe('Hide API Key')
+    expect(input.attributes('type')).toBe('text')
+    await button.trigger('click')
+    expect(button.attributes('aria-label')).toBe('Show API Key')
+    expect(input.attributes('type')).toBe('password')
+    expect((input.element as HTMLInputElement).value).toBe('sk-example-only')
+    expect(fetch).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('renders daily usage detail rows after a successful query', async () => {

@@ -14,10 +14,11 @@
 | 地址 | `http://103.236.85.237:7788` |
 | 服务 | `sub2api.service`（systemd，独立用户 `sub2api`） |
 | 生效二进制 | `/opt/sub2api/sub2api` → `/opt/sub2api/releases/<label>/sub2api` |
-| 当前 release | `logo-20261107-0120`，sha256 `1b01b69e…5cb753082` |
+| 当前 release | `ui-memory-20261107-polish`，sha256 `75f2f9aa…15731cb8`；入口 `/assets/index-Cu5omS9v.js` |
+| 页面版本 | `v0.2.19-ui-memory`（版本号不带时间；release 目录保留独立标识） |
 | 依赖 | 同机 PostgreSQL（开机自动执行迁移）+ Redis DB 0 |
 | 配置 | 生效 `/app/data/config.yaml`；回退 `/opt/sub2api/config.yaml` |
-| 回滚点 | `/opt/sub2api/releases/memory-ui-20261106-1100/sub2api` |
+| 回滚点 | `/opt/sub2api/releases/ui-memory-20261107-0250/sub2api` |
 
 目录约定：
 
@@ -40,13 +41,13 @@ DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 
 脚本按顺序做七件事，任何一步失败即中止：
 
-1. 预检：node / go / rsync 存在；**lockfile 必须含 `overrides` 段**（pnpm 12 会静默丢弃，见 §7）
+1. 预检：node / go / python3 存在；**lockfile 必须含 `overrides` 段**（pnpm 12 会静默丢弃，见 §7）
 2. `pnpm install --frozen-lockfile` + `pnpm run build`（pnpm 非 9.x 时自动切 `corepack pnpm@9.15.9`）
-3. `rsync --delete --exclude .keep` 同步 `frontend/dist/` → `backend/internal/web/dist/`
+3. 检查 `backend/internal/web/dist/` 的首页及入口 JS；Vite 直接输出到该目录
 4. `CGO_ENABLED=0 GOOS=linux go build -tags embed -trimpath -ldflags "-X main.Version=<version>"`
-5. 上传到 `/tmp`，远端校验 sha256 后落到 `releases/<label>/sub2api`
+5. 生成包含二进制及静态资源 sha256 的 `release-manifest.json`，上传到 `/tmp`，远端校验后落到新的 `releases/<label>/`（不覆盖已有 release）
 6. `ln -sfn` + `mv -Tf` 原子切换 `/opt/sub2api/sub2api`，重启服务并等待 active
-7. 公网验收：`/health`、首页入口 JS、`Cache-Control`
+7. 公网验收：`/health`、首页入口 JS 与本次清单的名称及 sha256 一致、哈希入口长期缓存、HTML 无缓存、CSP 配置脚本 nonce 一致且每次刷新
 
 脚本不打印任何密钥，不修改 `config.yaml`，不动数据库。
 
@@ -57,8 +58,8 @@ DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 | 检查 | 通过条件 |
 |---|---|
 | 健康 | `GET /health` = `{"status":"ok"}` |
-| 入口 | 首页 `index-*.js` 返回 200，且与本地 `frontend/dist` 同名 |
-| 缓存 | HTML `Cache-Control: no-store`，无 `ETag` |
+| 入口 | 首页 `index-*.js` 返回 200，且与本次 `release-manifest.json` 同名、同 sha256 |
+| 缓存 | HTML `Cache-Control: no-store`，无 `ETag`；哈希入口包含 `public, max-age=31536000, immutable` |
 | CSP | 响应头 `nonce-X` 与内联 `__APP_CONFIG__` 的 `nonce` 相同，连续两次请求不同 |
 | 静态资源 | 抽样或全量与 `release-manifest.json` 的 sha256 一致 |
 | 服务 | `ActiveState=active`，`NRestarts` 不增长 |
@@ -102,5 +103,5 @@ ssh root@103.236.85.237 '
 - 公网仅 HTTP，`7788` 无 TLS；证书签发受线路/备案限制（见 `respire-deploy` 记录）。
 - 单机单实例，无蓝绿或灰度；发布期间有秒级中断。
 - 迁移随进程启动自动执行，回滚前必须确认 schema 兼容。
-- 记忆服务（Respire）同机独立进程，仅监听回环 `8787`，不在本发布链路内。
+- 记忆服务（Respire）同机独立进程：同步服务监听回环 `8787`，用户1专属 Runtime 监听回环 `15170`；不在本发布链路内。
 - lockfile 必须由 pnpm 9 维护；用 pnpm 12 执行任何安装都会重写并丢弃 `overrides`，发布脚本已加断言拦截。

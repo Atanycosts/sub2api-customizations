@@ -472,6 +472,7 @@ const onDropdownKeyDown = (e: KeyboardEvent) => {
       break
     case 'Tab':
       isOpen.value = false
+      triggerRef.value?.focus()
       break
   }
 }

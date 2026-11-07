@@ -105,6 +105,38 @@ func (r *memoryArchiveRepository) Get(ctx context.Context, userID int64, eventID
 	return receipt, err
 }
 
+// Overview returns receipt metadata only. Source text and Runtime configuration
+// never leave the archive repository through the account UI.
+func (r *memoryArchiveRepository) Overview(ctx context.Context, userID int64) (service.MemoryArchiveOverview, error) {
+	if userID <= 0 {
+		return service.MemoryArchiveOverview{}, service.ErrMemoryUserRequired
+	}
+	result := service.MemoryArchiveOverview{Recent: make([]service.MemoryArchiveActivity, 0)}
+	err := r.db.QueryRowContext(ctx, `SELECT
+		COUNT(*) FILTER (WHERE state = 'completed'),
+		COUNT(*) FILTER (WHERE state IN ('pending', 'processing', 'submitted', 'retry_wait')),
+		COUNT(*) FILTER (WHERE state IN ('failed', 'needs_reconciliation'))
+		FROM memory_archive_queue WHERE user_id = $1`, userID).
+		Scan(&result.Archived, &result.Pending, &result.Attention)
+	if err != nil {
+		return service.MemoryArchiveOverview{}, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT event_id, state, created_at, updated_at
+		FROM memory_archive_queue WHERE user_id = $1 ORDER BY id DESC LIMIT 20`, userID)
+	if err != nil {
+		return service.MemoryArchiveOverview{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var event service.MemoryArchiveActivity
+		if err := rows.Scan(&event.EventID, &event.State, &event.CreatedAt, &event.UpdatedAt); err != nil {
+			return service.MemoryArchiveOverview{}, err
+		}
+		result.Recent = append(result.Recent, event)
+	}
+	return result, rows.Err()
+}
+
 func (r *memoryArchiveRepository) Claim(ctx context.Context, workerID string, limit int, lease time.Duration, maxReconciliationChecks int, userIDs []int64) ([]service.MemoryArchiveEvent, error) {
 	if strings.TrimSpace(workerID) == "" || len(workerID) > 128 {
 		return nil, errors.New("memory archive worker ID is required")

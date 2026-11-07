@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 
@@ -7,7 +7,7 @@ import DateRangePicker from '../DateRangePicker.vue'
 const messages: Record<string, string> = {
   'dates.today': 'Today',
   'dates.yesterday': 'Yesterday',
-  'dates.last24Hours': 'Last 24 Hours',
+  'dates.last24Hours': 'Last 2 Days',
   'dates.last7Days': 'Last 7 Days',
   'dates.last14Days': 'Last 14 Days',
   'dates.last30Days': 'Last 30 Days',
@@ -34,7 +34,9 @@ const formatLocalDate = (date: Date): string => {
 }
 
 describe('DateRangePicker', () => {
-  it('uses last 24 hours as the default recognized preset', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('recognizes yesterday and today as the last two days', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
@@ -50,7 +52,7 @@ describe('DateRangePicker', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('Last 24 Hours')
+    expect(wrapper.text()).toContain('Last 2 Days')
   })
 
   it('emits range updates with last24Hours preset when applied', async () => {
@@ -71,7 +73,7 @@ describe('DateRangePicker', () => {
 
     await wrapper.find('.date-picker-trigger').trigger('click')
     const presetButton = wrapper.findAll('.date-picker-preset').find((node) =>
-      node.text().includes('Last 24 Hours')
+      node.text().includes('Last 2 Days')
     )
     expect(presetButton).toBeDefined()
 
@@ -92,5 +94,20 @@ describe('DateRangePicker', () => {
         preset: 'last24Hours'
       }
     ])
+  })
+
+  it.each([320, 390])('keeps the popover within a %ipx viewport', async (viewportWidth) => {
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(viewportWidth)
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: '2026-11-06', endDate: '2026-11-07' },
+      global: { stubs: { Icon: true } }
+    })
+    vi.spyOn(wrapper.element, 'getBoundingClientRect').mockReturnValue({ left: 101 } as DOMRect)
+    await wrapper.get('.date-picker-trigger').trigger('click')
+    const dropdown = wrapper.get<HTMLElement>('.date-picker-dropdown').element
+    const left = 101 + parseFloat(dropdown.style.left)
+    expect(left).toBeGreaterThanOrEqual(12)
+    expect(left + parseFloat(dropdown.style.width)).toBeLessThanOrEqual(viewportWidth - 12)
+    wrapper.unmount()
   })
 })

@@ -408,6 +408,7 @@ export default {
       processing: '支付处理中',
       processingHint: '支付结果仍在确认中，页面会自动刷新。',
       failed: '支付失败',
+      failedHint: '此订单支付失败。请核对订单与支付渠道的记录后再尝试。',
       backToRecharge: '返回充值',
       viewOrders: '查看订单',
     },

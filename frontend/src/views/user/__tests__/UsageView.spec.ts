@@ -5,6 +5,10 @@ import UsageView from '../UsageView.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
+import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
+import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
+import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
+import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 
 const {
   query,
@@ -159,9 +163,12 @@ function mountUsageView() {
         Select: true,
         DateRangePicker: true,
         Icon: true,
-        UsageStatsCards: chartStub,
+        UsageStatsCards: {
+          props: ['stats'],
+          template: '<div data-testid="usage-totals">{{ stats.total_actual_cost }}</div>',
+        },
         UsageTable: { ...chartStub, props: ['columns'] },
-        UserErrorRequestsTable: chartStub,
+        UserErrorRequestsTable: { ...chartStub, props: ['rows', 'total', 'loading', 'page'] },
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,
@@ -233,6 +240,147 @@ describe('user UsageView', () => {
     expect(list).toHaveBeenCalledTimes(1)
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('hides old totals during a new filter request, shows its failure, and retries the current range', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="usage-totals"]').text()).toBe('0.08')
+
+    let rejectStats!: (error: Error) => void
+    getStats.mockImplementationOnce(() => new Promise((_, reject) => { rejectStats = reject }))
+    wrapper.findComponent(DateRangePicker).vm.$emit('change', {
+      startDate: '2026-11-01', endDate: '2026-11-02', preset: null,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="usage-totals"]').exists()).toBe(false)
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+
+    rejectStats(new Error('stats unavailable'))
+    await flushPromises()
+    const error = wrapper.findAll('[role="alert"]').find(item => item.text().includes('usage.statsLoadFailed'))!
+    expect(error.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="usage-totals"]').exists()).toBe(false)
+    expect(wrapper.findComponent(UsageTable).exists()).toBe(true)
+
+    getStats.mockResolvedValueOnce({ total_actual_cost: 0.42, endpoints: [] })
+    await error.get('button').trigger('click')
+    await flushPromises()
+    expect(getStats).toHaveBeenLastCalledWith(expect.objectContaining({ start_date: '2026-11-01', end_date: '2026-11-02' }))
+    expect(wrapper.get('[data-testid="usage-totals"]').text()).toBe('0.42')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('distinguishes failed chart requests from successful empty results and restores charts on retry', async () => {
+    getDashboardModels.mockRejectedValueOnce(new Error('models unavailable'))
+    getDashboardSnapshotV2.mockRejectedValueOnce(new Error('snapshot unavailable'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(wrapper.findComponent(ModelDistributionChart).exists()).toBe(false)
+    expect(wrapper.findComponent(GroupDistributionChart).exists()).toBe(false)
+    expect(wrapper.findComponent(TokenUsageTrend).exists()).toBe(false)
+    const chartErrors = wrapper.findAll('[role="alert"]').filter(item => item.text().includes('usage.chartsLoadFailed'))
+    expect(chartErrors).toHaveLength(3)
+
+    getDashboardModels.mockResolvedValueOnce({ models: [] })
+    await chartErrors[0].get('button').trigger('click')
+    await chartErrors[1].get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(ModelDistributionChart).exists()).toBe(true)
+    expect(wrapper.findComponent(GroupDistributionChart).exists()).toBe(true)
+    expect(wrapper.findComponent(TokenUsageTrend).exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps the newest error page when an older request completes after it', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Error records')!.trigger('click')
+    await flushPromises()
+    const table = wrapper.findComponent(UserErrorRequestsTable)
+    let resolveOlder!: (value: unknown) => void
+    let resolveNewer!: (value: unknown) => void
+    listMyErrorRequests
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveNewer = resolve }))
+
+    table.vm.$emit('update:page', 2)
+    table.vm.$emit('update:page', 3)
+    await flushPromises()
+    expect(table.props('loading')).toBe(true)
+    resolveNewer({ items: [{ id: 3, model: 'new-model' }], total: 60 })
+    await flushPromises()
+    expect(table.props('rows')).toEqual([{ id: 3, model: 'new-model' }])
+    expect(table.props('total')).toBe(60)
+    expect(table.props('loading')).toBe(false)
+
+    resolveOlder({ items: [{ id: 2, model: 'old-model' }], total: 40 })
+    await flushPromises()
+    expect(table.props('rows')).toEqual([{ id: 3, model: 'new-model' }])
+    expect(table.props('total')).toBe(60)
+    expect(table.props('page')).toBe(3)
+    wrapper.unmount()
+  })
+
+  it('keeps the newest error request loading while an older failure arrives', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Error records')!.trigger('click')
+    await flushPromises()
+    const table = wrapper.findComponent(UserErrorRequestsTable)
+    let rejectOlder!: (error: Error) => void
+    let resolveNewer!: (value: unknown) => void
+    listMyErrorRequests
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectOlder = reject }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveNewer = resolve }))
+
+    table.vm.$emit('update:page', 2)
+    table.vm.$emit('update:page', 3)
+    await flushPromises()
+    rejectOlder(new Error('older request failed'))
+    await flushPromises()
+    expect(table.props('loading')).toBe(true)
+    expect(showError).not.toHaveBeenCalled()
+    resolveNewer({ items: [], total: 0 })
+    await flushPromises()
+    expect(table.props('loading')).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows a retry for failed usage records without replacing them with an empty-state claim', async () => {
+    query.mockRejectedValueOnce(new Error('records unavailable'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    expect(wrapper.findComponent(UsageTable).exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Failed to load')
+    expect(wrapper.find('[data-testid="usage-totals"]').exists()).toBe(true)
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.findComponent(UsageTable).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows a retry for a current error-list failure and recovers with the selected page', async () => {
+    listMyErrorRequests.mockRejectedValueOnce(new Error('errors unavailable'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Error records')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(UserErrorRequestsTable).exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('usage.errors.failedToLoad')
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.findComponent(UserErrorRequestsTable).exists()).toBe(true)
+    expect(listMyErrorRequests).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+    wrapper.unmount()
   })
 
   it('includes API keys after the first page in both record filters and queries by the selected key', async () => {

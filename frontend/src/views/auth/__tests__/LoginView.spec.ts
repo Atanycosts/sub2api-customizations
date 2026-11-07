@@ -104,6 +104,24 @@ describe('LoginView registration entry', () => {
     expect(wrapper.text()).toContain('auth.signUp')
   })
 
+  it('names the password reveal action and preserves the entered value when toggled', async () => {
+    const wrapper = mountLogin()
+    await flushPromises()
+    const input = wrapper.get('#password')
+    await input.setValue('sample-password')
+    const button = wrapper.get('button[aria-controls="password"]')
+
+    expect(button.attributes('aria-label')).toBe('common.showPassword')
+    expect(input.attributes('type')).toBe('password')
+    await button.trigger('click')
+    expect(button.attributes('aria-label')).toBe('common.hidePassword')
+    expect(input.attributes('type')).toBe('text')
+    await button.trigger('click')
+    expect(button.attributes('aria-label')).toBe('common.showPassword')
+    expect(input.attributes('type')).toBe('password')
+    expect((input.element as HTMLInputElement).value).toBe('sample-password')
+  })
+
   it('hides the registration entry when registration is disabled', async () => {
     getPublicSettingsMock.mockResolvedValueOnce({
       ...publicSettings,

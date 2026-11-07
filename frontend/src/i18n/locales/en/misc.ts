@@ -384,6 +384,7 @@ export default {
       processing: 'Payment Processing',
       processingHint: 'Payment confirmation is still pending. This page will refresh automatically.',
       failed: 'Payment Failed',
+      failedHint: 'Payment for this order failed. Check the order and your payment provider’s records before trying again.',
       backToRecharge: 'Back to Recharge',
       viewOrders: 'View Orders',
     },

@@ -357,4 +357,68 @@ describe('DataTable', () => {
 
     expect(wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]).toEqual([99, 1, 2])
   })
+
+  it('provides a native keyboard button for desktop sorting', async () => {
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name', sortable: true }],
+        data: [{ name: 'Beta' }, { name: 'Alpha' }]
+      }
+    })
+    const sortButton = wrapper.get('th button')
+    expect(sortButton.attributes('type')).toBe('button')
+    await sortButton.trigger('click')
+    expect(wrapper.get('th').attributes('aria-sort')).toBe('ascending')
+    expect(wrapper.findAll('tbody tr').map(row => row.text())).toEqual(['Alpha', 'Beta'])
+    wrapper.unmount()
+  })
+
+  it('sorts phone cards by a chosen field and direction', async () => {
+    stubMobileMatchMedia()
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name', sortable: true }],
+        data: [{ name: 'Beta' }, { name: 'Alpha' }]
+      }
+    })
+    const controls = wrapper.findAll('[data-test="mobile-sort"] select')
+    expect(controls[1].attributes('disabled')).toBeDefined()
+    await controls[0].setValue('name')
+    expect(wrapper.findAll('[data-field="name"]').map(row => row.text())).toEqual(['NameAlpha', 'NameBeta'])
+    await controls[1].setValue('desc')
+    expect(wrapper.findAll('[data-field="name"]').map(row => row.text())).toEqual(['NameBeta', 'NameAlpha'])
+    wrapper.unmount()
+  })
+
+  it('emits server sort changes from phone controls without rearranging rows', async () => {
+    stubMobileMatchMedia()
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name', sortable: true }],
+        data: [{ name: 'Beta' }, { name: 'Alpha' }],
+        serverSideSort: true,
+        defaultSortKey: 'name'
+      }
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.findAll('[data-test="mobile-sort"] select')[1].setValue('desc')
+    expect(wrapper.emitted('sort')).toEqual([['name', 'desc']])
+    expect(wrapper.findAll('[data-field="name"]').map(row => row.text())).toEqual(['NameBeta', 'NameAlpha'])
+    wrapper.unmount()
+  })
+
+  it('keeps secondary phone fields inside a disclosure while retaining their slots', () => {
+    stubMobileMatchMedia()
+    const wrapper = mount(DataTable, {
+      props: {
+        columns: [{ key: 'name', label: 'Name' }, { key: 'created', label: 'Created', mobileSecondary: true }],
+        data: [{ name: 'Key', created: '2026-11-07' }]
+      },
+      slots: { 'cell-created': '<time>November 7</time>' }
+    })
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('details [data-field="created"] time').text()).toBe('November 7')
+    expect(wrapper.get('[data-field="name"]').element.closest('details')).toBeNull()
+    wrapper.unmount()
+  })
 })

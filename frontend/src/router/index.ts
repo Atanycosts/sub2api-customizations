@@ -188,6 +188,16 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== User Routes ====================
   {
+    path: '/memory',
+    name: 'AccountMemory',
+    component: () => import('@/views/user/MemoryView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Account memory',
+      titleKey: 'accountMemory.title'
+    }
+  },
+  {
     path: '/',
     redirect: '/home'
   },

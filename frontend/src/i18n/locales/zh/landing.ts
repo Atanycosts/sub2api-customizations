@@ -131,6 +131,9 @@ export default {
 
   // Key Usage Query Page
   keyUsage: {
+    apiKeyLabel: 'API Key',
+    showKey: '显示 API Key',
+    hideKey: '隐藏 API Key',
     title: 'API Key 用量查询',
     subtitle: '输入您的 API Key 以查看实时消费金额与使用状态',
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',

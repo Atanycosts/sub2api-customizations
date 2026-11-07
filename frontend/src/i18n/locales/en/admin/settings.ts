@@ -2,6 +2,17 @@ export default {
     settings: {
       title: 'System Settings',
       description: 'Manage registration, email verification, default values, and SMTP settings',
+      navigation: {
+        jumpToSection: 'Jump to section',
+        searchSections: 'Find a section…',
+        expandAll: 'Expand all',
+        collapseAll: 'Collapse all',
+        independentSave: 'Saves separately',
+        pageSave: 'Page save',
+        savePage: 'Save page settings',
+        pendingChanges: 'Unsaved changes',
+        upToDate: 'Page settings saved',
+      },
       tabs: {
         general: 'General',
         agreement: 'Agreement',
@@ -636,6 +647,7 @@ export default {
       },
       webSearchEmulation: {
         title: 'Web Search Emulation',
+        loadFailed: 'Search settings failed to load',
         description: 'Inject web search capability for Anthropic API Key accounts that don\'t natively support it',
         enabled: 'Enable Web Search Emulation',
         enabledHint: 'Global switch. When disabled, web search emulation is inactive for all channels and accounts.',

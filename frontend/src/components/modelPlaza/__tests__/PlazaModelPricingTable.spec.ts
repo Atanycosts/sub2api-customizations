@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlazaModelPricingTable from '../PlazaModelPricingTable.vue'
 import type { PlazaModel } from '@/api/modelPlaza'
@@ -56,6 +56,76 @@ function mountTable(
     props: { models, rateMultiplier, userRateMultiplier: userRateMultiplier ?? null, ...extraProps }
   })
 }
+
+describe('PlazaModelPricingTable phone cards', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(query => ({
+      matches: false, media: query, onchange: null,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn()
+    }))
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('shows actual input/output prices without a wide table and keeps cache/reference prices in details', () => {
+    const wrapper = mountTable([tokenModel()], 0.5)
+    expect(wrapper.find('table').exists()).toBe(false)
+    const card = wrapper.get('[data-test="model-price-card"]')
+    expect(card.get('[data-test="paid-token-tier"]').text()).toContain('$1.50')
+    expect(card.get('[data-test="paid-token-tier"]').text()).toContain('$7.50')
+    const details = card.get('details')
+    expect(details.attributes('open')).toBeUndefined()
+    expect(details.text()).toContain('$1.875')
+    expect(details.text()).toContain('$0.15')
+    expect(details.text()).toContain('$6.00')
+    expect(details.text()).toContain('modelPlaza.table.officialPrice')
+    wrapper.unmount()
+  })
+
+  it('resolves token tier multipliers and applies time/user rates in each phone card', () => {
+    const model = tokenModel()
+    model.pricing!.intervals = [{
+      min_tokens: 200000, max_tokens: null, tier_label: '>200K',
+      input_price: null, output_price: null,
+      cache_write_price: null, cache_read_price: null, per_request_price: null,
+      input_multiplier: 2, output_multiplier: 2,
+      cache_write_multiplier: 2, cache_read_multiplier: 2
+    }]
+    model.time_pricing = {
+      timezone: 'Asia/Shanghai', weekdays_only: true,
+      periods: [{ start_time: '01:00', end_time: '08:00', multiplier: 0.5 }]
+    }
+    const wrapper = mountTable([model], 1, 0.8)
+    const cards = wrapper.findAll('[data-test="model-price-card"]')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].get('[data-test="paid-token-tier"]').text()).toContain('$4.80')
+    expect(cards[1].get('[data-test="paid-token-tier"]').text()).toContain('$2.40')
+    expect(cards[1].get('[data-test="paid-token-tier"]').text()).toContain('$12.00')
+    expect(cards[1].get('details').text()).toContain('$3.00')
+    expect(cards[1].get('[data-test="mobile-price-rate"]').text()).toBe('0.4x')
+    expect(cards[1].text()).toContain('01:00–08:00')
+    expect(cards[1].text()).toContain('modelPlaza.table.timePricingRowHintWeekdays')
+    wrapper.unmount()
+  })
+
+  it.each(['image', 'video'] as const)('uses the independent %s rate for phone request tiers', (mode) => {
+    const model = tokenModel({ name: 'media-model', official_pricing: null })
+    model.pricing!.billing_mode = mode
+    model.pricing!.intervals = [{
+      min_tokens: 0, max_tokens: null, tier_label: '2K',
+      input_price: null, output_price: null,
+      cache_write_price: null, cache_read_price: null, per_request_price: 0.2
+    }]
+    const wrapper = mountTable([model], 0.1, 0.05, {
+      imageRateIndependent: true, imageRateMultiplier: 0.5,
+      videoRateIndependent: true, videoRateMultiplier: 0.5
+    })
+    expect(wrapper.get('[data-test="paid-request-price"]').text()).toContain('2K')
+    expect(wrapper.get('[data-test="paid-request-price"]').text()).toContain('$0.10')
+    expect(wrapper.get('[data-test="mobile-price-rate"]').text()).toBe('0.5x')
+    wrapper.unmount()
+  })
+})
 
 describe('PlazaModelPricingTable', () => {
   it.each([

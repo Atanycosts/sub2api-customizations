@@ -55,6 +55,8 @@
               </svg>
             </div>
             <input
+              id="usage-api-key"
+              :aria-label="t('keyUsage.apiKeyLabel')"
               v-model="apiKey"
               :type="keyVisible ? 'text' : 'password'"
               :placeholder="t('keyUsage.placeholder')"
@@ -62,6 +64,9 @@
               @keydown.enter="queryKey"
             />
             <button
+              type="button"
+              :aria-label="keyVisible ? t('keyUsage.hideKey') : t('keyUsage.showKey')"
+              aria-controls="usage-api-key"
               @click="keyVisible = !keyVisible"
               class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 dark:text-dark-500 dark:hover:text-white transition-colors"
             >

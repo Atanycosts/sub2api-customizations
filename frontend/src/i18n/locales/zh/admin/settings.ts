@@ -2,6 +2,17 @@ export default {
     settings: {
       title: '系统设置',
       description: '管理注册、邮箱验证、默认值和 SMTP 设置',
+      navigation: {
+        jumpToSection: '定位设置项',
+        searchSections: '查找分区…',
+        expandAll: '展开全部',
+        collapseAll: '收起全部',
+        independentSave: '单独保存',
+        pageSave: '页面保存',
+        savePage: '保存页面设置',
+        pendingChanges: '有未保存修改',
+        upToDate: '页面设置已保存',
+      },
       tabs: {
         general: '通用设置',
         agreement: '登录条款',
@@ -629,6 +640,7 @@ export default {
       },
       webSearchEmulation: {
         title: 'Web Search 模拟',
+        loadFailed: '搜索配置加载失败',
         description: '为不原生支持搜索的 Anthropic API Key 账号注入 web search 能力',
         enabled: '启用 Web Search 模拟',
         enabledHint: '全局开关。关闭后所有渠道和账号的 web search 模拟均不生效。',

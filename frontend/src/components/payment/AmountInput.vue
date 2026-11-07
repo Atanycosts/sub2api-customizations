@@ -3,7 +3,7 @@
     <!-- Quick Amount Buttons -->
     <div>
       <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ t('payment.quickAmounts') }}
+        {{ t('payment.quickAmounts') }} ({{ paymentCurrency }})
       </label>
       <div class="grid grid-cols-3 gap-x-4 gap-y-4 pt-2">
         <button
@@ -51,18 +51,19 @@
     <!-- Custom Amount Input -->
     <div>
       <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ t('payment.customAmount') }}
+        {{ t('payment.customAmount') }} ({{ paymentCurrency }})
       </label>
       <div class="relative">
         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
-          $
+          {{ paymentSymbol }}
         </span>
         <input
           type="text"
           inputmode="decimal"
           :value="customText"
           :placeholder="placeholderText"
-          class="input w-full py-3 pl-8 pr-4"
+          class="input w-full py-3 pr-4"
+          :style="{ paddingLeft: `calc(1.25rem + ${paymentSymbol.length}ch)` }"
           @input="handleInput"
         />
       </div>
@@ -75,7 +76,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { RechargeBonusTier } from '@/types/payment'
 import { formatRechargeBonusNumber, quoteRechargeBonus, type RechargeBonusMode } from '@/utils/rechargeBonus'
-import { formatPaymentAmount } from './currency'
+import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from './currency'
 
 const props = withDefaults(defineProps<{
   amounts?: number[]
@@ -88,7 +89,7 @@ const props = withDefaults(defineProps<{
   bonusMode?: RechargeBonusMode
   /** 充值倍率（1 支付币种 = multiplier USD），用于计算到账金额 */
   multiplier?: number
-  /** 支付币种（折扣模式第二行实付金额的币种与精度） */
+  /** 支付币种（输入、价签和实付金额的币种与精度） */
   currency?: string
 }>(), {
   amounts: () => [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
@@ -105,6 +106,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const paymentCurrency = computed(() => normalizePaymentCurrency(props.currency))
+const paymentSymbol = computed(() => currencySymbol(paymentCurrency.value))
 
 const customText = ref('')
 
