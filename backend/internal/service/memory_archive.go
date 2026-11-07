@@ -104,7 +104,10 @@ type MemoryArchiveOutcomeUnknown interface{ OutcomeUnknown() bool }
 type MemoryArchiveRetryable interface{ Retryable() bool }
 
 type MemoryArchiveWorkerOptions struct {
-	UserIDs                 []int64
+	UserIDs []int64
+	// UserScope supplies the provider's validated, provisioned tenant snapshot.
+	// It never expands a missing/empty scope to all users in the database.
+	UserScope               func() []int64
 	PollInterval            time.Duration
 	Lease                   time.Duration
 	OperationTimeout        time.Duration
@@ -233,7 +236,7 @@ func (w *MemoryArchiveWorker) RunOnce(ctx context.Context) error {
 			return err
 		}
 		claimCtx, cancel := context.WithTimeout(ctx, w.options.PersistenceTimeout)
-		events, err := w.repo.Claim(claimCtx, w.workerID, 1, w.options.Lease, w.options.MaxReconciliationChecks, w.options.UserIDs)
+		events, err := w.repo.Claim(claimCtx, w.workerID, 1, w.options.Lease, w.options.MaxReconciliationChecks, w.userIDs())
 		cancel()
 		if err != nil {
 			return fmt.Errorf("claim memory archive: %w", err)
@@ -248,8 +251,15 @@ func (w *MemoryArchiveWorker) RunOnce(ctx context.Context) error {
 	return nil
 }
 
+func (w *MemoryArchiveWorker) userIDs() []int64 {
+	if w.options.UserScope != nil {
+		return w.options.UserScope()
+	}
+	return w.options.UserIDs
+}
+
 func (w *MemoryArchiveWorker) configured() bool {
-	if w == nil || w.repo == nil || w.provider == nil || len(w.options.UserIDs) == 0 {
+	if w == nil || w.repo == nil || w.provider == nil || len(w.userIDs()) == 0 {
 		return false
 	}
 	switch w.provider.(type) {

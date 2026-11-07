@@ -108,3 +108,33 @@ ssh root@103.236.85.237 '
 - 迁移随进程启动自动执行，回滚前必须确认 schema 兼容。
 - 记忆服务（Respire）同机独立进程：同步服务监听回环 `8787`，用户1专属 Runtime 监听回环 `15170`；不在本发布链路内。
 - lockfile 必须由 pnpm 9 维护；用 pnpm 12 执行任何安装都会重写并丢弃 `overrides`，发布脚本已加断言拦截。
+
+## 8. 全站账号记忆的配套服务
+
+网关仍通过本文件 §2 发布。账号准备和共享编码是独立 systemd 服务；模型准备完毕、绑定清单可由 `sub2api` 用户读取后，才在生效配置的 `memory` 段增加 `bindings_file: /etc/sub2api/memory-bindings.json`。静态用户 1 的库、密钥、M3 模型和同步保持原绑定。只增加绑定清单这一项配置，回退 YAML 保持原字节。
+
+共享服务使用服务器 Python 3.12 独立 venv：`/opt/respire-runtime/embedding-venv`，依赖固定于 `deploy/memory-embeddings-requirements.txt`。安装脚本为 `/opt/respire-runtime/memory-embeddings.py`，unit 来源 `deploy/sub2api-memory-embeddings.service`；服务用户 `sub2api-embedding`，home `/var/lib/sub2api-embedding`，只监听 `127.0.0.1:15168`，不向公网开放。`GET /health` 返回模型身份；`POST /v1/embeddings` 为仅在内存中处理文本的 OpenAI 兼容编码接口，没有存储、记忆查询或日志正文。
+
+模型目录 `/opt/respire-runtime/models/bge-small-zh-v1.5`，来源 `Xenova/bge-small-zh-v1.5` 的固定 revision `75c43b069aac4d136ba6bc1122f995fedcfd2781`。启动核对以下完整 SHA-256，不接受同名替换：
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `tokenizer.json` | `48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26` |
+| `onnx/model_quantized.onnx` | `15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc` |
+
+账号供应脚本安装为 `/opt/sub2api/provision-account-memory.py`，依赖宿主 PyYAML 和现有 PostgreSQL CLI；unit/timer 来源 `deploy/sub2api-memory-provision.{service,timer}`。脚本只选取未删除、active 且未主动停用记忆的产品账号。新账号有独立 OS 用户 `sub2api-memory<ID>`、home `/var/lib/sub2api-memory<ID>`、root-only 密钥文件 `/etc/sub2api-memory<ID>.env` 和回环端口 `15169+ID`；端口超出 TCP 范围时明确失败。初始化密钥输出直接写 root-only 回执，不打印到日志。固定 Respire Runtime `1.0.20` 通过 `host_transport/openai_embeddings` 使用共享模型；每个账号不再单独加载模型权重。
+
+```sh
+systemctl enable --now sub2api-memory-embeddings
+python3 /opt/sub2api/provision-account-memory.py
+# 仅将此前准备的 small-model 管理库切换到共享编码，静态绑定不参与：
+python3 /opt/sub2api/provision-account-memory.py --reconcile-bindings
+python3 deploy/tests/memory-embeddings-smoke.py
+systemctl enable --now sub2api-memory-provision.timer
+```
+
+新绑定只有通过版本、库目录和已激活模型检查后才写入 `/etc/sub2api/memory-bindings.json`（目录 root:sub2api 0750，文件 0640，原子替换）。供应每分钟运行一次，网关每 5 秒读取新增绑定。已加载绑定不因文件缩减而移除；停用仍由数据库 fence 控制，不能用编辑清单模拟删除或改绑。
+
+本链路没有新增数据库迁移。验收需覆盖所有活跃账号状态、真实来源写入/读回、合成相关与无关查询、跨账号及并发隔离、共享编码故障、服务重启和静态用户 1/密文同步的进程不变。账号状态接口中的 active 只表示配置与停用状态，不是每次 Runtime 健康检查。回答效果、项目范围和成本收益需要单独实验，不能以归档成功或共享编码 smoke 测试代替。
+
+回滚网关时切回上一 release 并恢复备份的生效 YAML；既有独立库和密钥保留。停用供应 timer 可阻止新增账号准备。不要删除账号库或覆盖密钥作为回滚手段。

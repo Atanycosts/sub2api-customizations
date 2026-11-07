@@ -41,6 +41,7 @@ func TestMemoryConfigRejectsUnsafeOrIncompleteBinding(t *testing.T) {
 		{"wrong path", func(c *MemoryConfig) { c.Bindings[0].BaseURL = "http://127.0.0.1:15170/rpc" }},
 		{"invalid port", func(c *MemoryConfig) { c.Bindings[0].BaseURL = "http://127.0.0.1:70000" }},
 		{"relative library", func(c *MemoryConfig) { c.Bindings[0].DataDir = "./user42" }},
+		{"relative manifest", func(c *MemoryConfig) { c.BindingsFile = "./bindings.json" }},
 		{"shared loopback alias", func(c *MemoryConfig) {
 			c.Bindings = append(c.Bindings, MemoryRuntimeBinding{UserID: 43, BaseURL: "http://[::1]:15170", DataDir: "/srv/respire/u43"})
 		}},
@@ -57,4 +58,15 @@ func TestMemoryConfigRejectsUnsafeOrIncompleteBinding(t *testing.T) {
 			require.Error(t, c.Validate())
 		})
 	}
+}
+
+func TestMemoryConfigReadsProvisionedBindingsFile(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "bindings.json")
+	require.NoError(t, os.WriteFile(filename, []byte(`[{"user_id":43,"base_url":"http://127.0.0.1:15171","data_dir":"/srv/respire/u43"}]`), 0600))
+	bindings, err := ReadMemoryRuntimeBindings(filename)
+	require.NoError(t, err)
+	require.Equal(t, []MemoryRuntimeBinding{{UserID: 43, BaseURL: "http://127.0.0.1:15171", DataDir: "/srv/respire/u43"}}, bindings)
+	require.NoError(t, os.WriteFile(filename, []byte(`[{"user_id":43`), 0600))
+	_, err = ReadMemoryRuntimeBindings(filename)
+	require.Error(t, err, "a partial publication must never admit a tenant")
 }
