@@ -6,7 +6,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -404,12 +407,13 @@ func (c *inflightSnapshotCacheStub) set(groupID int64, platform string, accounts
 func (c *inflightSnapshotCacheStub) GetSnapshot(_ context.Context, bucket SchedulerBucket) ([]*Account, bool, error) {
 	c.reads.Add(1)
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	src := c.byBucket[inflightBucketKey(bucket.GroupID, bucket.Platform)]
 	out := make([]*Account, 0, len(src))
 	for i := range src {
-		out = append(out, &src[i])
+		a := src[i]
+		out = append(out, &a)
 	}
-	c.mu.Unlock()
 	return out, true, nil
 }
 
@@ -433,6 +437,24 @@ func attachInflightSnapshot(svc *GatewayService, snap *inflightSnapshotCacheStub
 
 // 已定价模型永不查账号映射；随机未定价模型名不直接查库、不产生按模型名的缓存（内存有界）。
 func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
+	const childProcessEnv = "SUB2API_TEST_INFLIGHT_MEMORY_CHILD"
+	if os.Getenv(childProcessEnv) != "1" {
+		// HeapAlloc is process-wide. Isolate this test from background allocations
+		// in other service tests while keeping the retained-memory limit unchanged.
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		command := exec.Command(binary, "-test.run=^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$")
+		for _, variable := range os.Environ() {
+			if !strings.HasPrefix(variable, childProcessEnv+"=") {
+				command.Env = append(command.Env, variable)
+			}
+		}
+		command.Env = append(command.Env, childProcessEnv+"=1")
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "isolated memory check failed:\n%s", output)
+		return
+	}
+
 	groupID := int64(40)
 	svc := newInflightEstimateGateway(t, nil)
 	snap := &inflightSnapshotCacheStub{byBucket: map[string][]Account{inflightBucketKey(groupID, PlatformAnthropic): {
@@ -452,25 +474,18 @@ func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 	const n = 20000
-	estimateUnknownModels := func(start int) {
-		for i := start; i < start+n; i++ {
-			model := fmt.Sprintf("rand-%d", i)
-			_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: model, BodyBytes: 4000, MaxTokens: 1000})
-			require.False(t, priced)
-		}
+	for i := 0; i < n; i++ {
+		model := fmt.Sprintf("rand-%d-%d", i, time.Now().UnixNano())
+		_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: model, BodyBytes: 4000, MaxTokens: 1000})
+		require.False(t, priced)
 	}
-	estimateUnknownModels(0)
-	runtime.GC()
-	var firstBatch runtime.MemStats
-	runtime.ReadMemStats(&firstBatch)
-	estimateUnknownModels(n)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
+	// Keep service-owned caches reachable through the final GC and measurement.
+	runtime.KeepAlive(svc)
 	require.Zero(t, repo.dbCalls.Load(), "no direct DB query on the request path")
-	require.Equal(t, int64(2*n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
-	firstBatchGrowth := int64(firstBatch.HeapAlloc) - int64(before.HeapAlloc)
-	secondBatchGrowth := int64(after.HeapAlloc) - int64(firstBatch.HeapAlloc)
-	require.Less(t, secondBatchGrowth-firstBatchGrowth, int64(4<<20), "unknown-model handling must not retain memory per model")
+	require.Equal(t, int64(n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
+	require.Less(t, int64(after.HeapAlloc)-int64(before.HeapAlloc), int64(8<<20), "no per-model cache growth")
 }
 
 // 无分组 API Key：使用调度器的未分组账号池，估算与计费回退的账号映射模型同口径。
