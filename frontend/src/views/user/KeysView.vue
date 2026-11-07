@@ -1080,6 +1080,53 @@
       @close="closeUseKeyModal"
     />
 
+    <!-- Created Key Receipt: shows the full key and hands off to setup -->
+    <BaseDialog
+      :show="showCreatedKeyDialog"
+      :title="t('keys.keyCreated.title')"
+      width="normal"
+      @close="closeCreatedKeyDialog"
+    >
+      <div class="space-y-4">
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+          {{ t('keys.keyCreated.description') }}
+        </p>
+
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
+          <p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
+            {{ t('keys.keyCreated.keyLabel') }}
+          </p>
+          <div class="flex items-start gap-2">
+            <code class="min-w-0 flex-1 break-all font-mono text-sm text-gray-900 dark:text-white">{{ createdKey?.key }}</code>
+            <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="copyCreatedKey">
+              <Icon name="clipboard" size="sm" class="mr-1.5" />
+              {{ t('keys.copyToClipboard') }}
+            </button>
+          </div>
+          <p v-if="createdKey?.group?.name" class="mt-2 text-xs text-gray-500 dark:text-dark-400">
+            {{ t('keys.keyCreated.groupLabel', { name: createdKey.group.name }) }}
+          </p>
+        </div>
+
+        <div class="flex items-start gap-2 rounded-lg bg-primary-50 p-3 text-sm text-primary-800 dark:bg-primary-900/20 dark:text-primary-200">
+          <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0" />
+          <p>{{ t('keys.keyCreated.nextHint') }}</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeCreatedKeyDialog">
+            {{ t('keys.keyCreated.later') }}
+          </button>
+          <button type="button" class="btn btn-primary" @click="configureCreatedKey">
+            {{ t('keys.keyCreated.configureNow') }}
+            <Icon name="arrowRight" size="sm" class="ml-2" />
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- CCS Client Selection Dialog for Antigravity -->
     <BaseDialog
       :show="showCcsClientSelect"
@@ -1199,12 +1246,13 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
 	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useRoute, useRouter } from 'vue-router'
 
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
@@ -1260,6 +1308,8 @@ interface GroupOption {
 
 const appStore = useAppStore()
 const onboardingStore = useOnboardingStore()
+const route = useRoute()
+const router = useRouter()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const allColumns = computed<Column[]>(() => [
@@ -1402,6 +1452,8 @@ const showDeleteDialog = ref(false)
 const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
+const showCreatedKeyDialog = ref(false)
+const createdKey = ref<ApiKey | null>(null)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
@@ -1638,9 +1690,35 @@ const loadApiKeys = async () => {
   }
 }
 
+/**
+ * Deep link from the model plaza: /keys?group=<id> opens the create dialog
+ * with that group already selected. Falls back to the normal list when the
+ * group is missing or unavailable to the current account.
+ */
+const applyCreateQuery = async () => {
+  const rawGroup = route?.query?.group
+  const groupParam = Array.isArray(rawGroup) ? rawGroup[0] : rawGroup
+  if (typeof groupParam !== 'string' || !groupParam) return
+  const groupId = Number(groupParam)
+  if (!Number.isInteger(groupId) || groupId <= 0) return
+  const group = groups.value.find((item) => item.id === groupId)
+  if (!group) return
+
+  showCreateModal.value = true
+  // 先让打开弹窗时的默认供应商重置跑完，再覆盖成链接指定的分组。
+  await nextTick()
+  createProvider.value = getKeyGroupProvider(group.platform)
+  formData.value.group_id = groupId
+
+  const query = { ...route.query }
+  delete query.group
+  void router?.replace({ query })
+}
+
 const loadGroups = async () => {
   try {
     groups.value = await userGroupsAPI.getAvailable()
+    applyCreateQuery()
   } catch (error) {
     console.error('Failed to load groups:', error)
   }
@@ -1670,6 +1748,25 @@ const openUseKeyModal = (key: ApiKey) => {
 const closeUseKeyModal = () => {
   showUseKeyModal.value = false
   selectedKey.value = null
+}
+
+const closeCreatedKeyDialog = () => {
+  showCreatedKeyDialog.value = false
+  createdKey.value = null
+}
+
+/** Jump straight from the created-key receipt into the client setup guide. */
+const configureCreatedKey = () => {
+  if (!createdKey.value) return
+  selectedKey.value = createdKey.value
+  createdKey.value = null
+  showCreatedKeyDialog.value = false
+  showUseKeyModal.value = true
+}
+
+const copyCreatedKey = async () => {
+  if (!createdKey.value) return
+  await clipboardCopy(createdKey.value.key, t('keys.copied'))
 }
 
 const handlePageChange = (page: number) => {
@@ -1872,7 +1969,7 @@ const handleSubmit = async () => {
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
+      const created = await keysAPI.create(
         formData.value.name,
         formData.value.group_id,
         customKey,
@@ -1887,6 +1984,11 @@ const handleSubmit = async () => {
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
         onboardingStore.nextStep(500)
       }
+      createdKey.value = created
+      closeModals()
+      loadApiKeys()
+      showCreatedKeyDialog.value = true
+      return
     }
     closeModals()
     loadApiKeys()

@@ -32,6 +32,13 @@ const {
   nextStep: vi.fn(),
 }))
 
+const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => routeState,
+  useRouter: () => ({ replace: vi.fn() }),
+}))
+
 const messages: Record<string, string> = {
   'common.actions': 'Actions',
   'common.name': 'Name',
@@ -238,7 +245,10 @@ const mountView = async () => {
         Select: SelectStub,
         SearchInput: SearchInputStub,
         Icon: IconStub,
-        UseKeyModal: true,
+        UseKeyModal: {
+          props: ['show', 'apiKey'],
+          template: '<div v-if="show" data-test="use-key-modal">{{ apiKey }}</div>',
+        },
         BulkEditKeysModal: true,
         EndpointPopover: true,
         GroupBadge: true,
@@ -269,6 +279,7 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 describe('user KeysView column settings', () => {
   beforeEach(() => {
     localStorage.clear()
+    routeState.query = {}
 
     listKeys.mockReset()
     updateKey.mockReset()
@@ -652,6 +663,30 @@ describe('user KeysView column settings', () => {
       await getButtonByText(wrapper, 'common.edit').trigger('click')
       expect(wrapper.find('[data-tour="key-form-provider"]').exists()).toBe(false)
       expect(optionIds(wrapper)).toHaveLength(12)
+    })
+
+    it('opens the create dialog with the group passed by a plaza link', async () => {
+      routeState.query = { group: '3' }
+      const wrapper = await mountView()
+      await flushPromises()
+
+      expect(optionIds(wrapper)).toEqual([3, 4, 5, 6])
+      expect(groupSelect(wrapper).props('modelValue')).toBe(3)
+      expect(wrapper.get<HTMLInputElement>('input[value="domestic"]').element.checked).toBe(true)
+    })
+
+    it('shows the created key and hands off to the client setup', async () => {
+      const wrapper = await openCreate()
+      await wrapper.get('[data-tour="key-form-name"]').setValue('My key')
+      await groupSelect(wrapper).vm.$emit('update:modelValue', 1)
+      vi.mocked(keysAPI.create).mockResolvedValue({ ...createApiKey(), id: 9 })
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('keys.keyCreated.description')
+      expect(wrapper.text()).toContain('sk-test-key')
+      await getButtonByText(wrapper, 'keys.keyCreated.configureNow').trigger('click')
+      expect(wrapper.get('[data-test="use-key-modal"]').text()).toContain('sk-test-key')
     })
   })
 })

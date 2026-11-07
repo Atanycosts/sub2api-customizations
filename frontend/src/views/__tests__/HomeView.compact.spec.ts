@@ -7,6 +7,7 @@ const { appStore, authStore } = vi.hoisted(() => ({
   appStore: {
     cachedPublicSettings: {} as Record<string, unknown>,
     siteName: 'Fallback site',
+    siteSubtitle: '',
     siteLogo: '',
     docUrl: '',
     publicSettingsLoaded: true,
@@ -43,6 +44,8 @@ function mountHome(settings: Record<string, unknown> = {}) {
     site_subtitle: 'Test subtitle',
     ...settings,
   }
+  appStore.siteName = String(appStore.cachedPublicSettings.site_name)
+  appStore.siteSubtitle = String(appStore.cachedPublicSettings.site_subtitle)
 
   return mount(HomeView, {
     global: {
@@ -85,6 +88,7 @@ describe('HomeView compact mode', () => {
 
     expect(wrapper.get('#custom-home').text()).toBe('Custom home')
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
+    expect(wrapper.find('footer').exists()).toBe(false)
   })
 
   it('renders custom URL content ahead of compact mode', () => {
@@ -172,6 +176,21 @@ describe('HomeView compact mode', () => {
     })
 
     expect(modelPlazaDestination(wrapper)).toBe('/model-plaza')
+  })
+
+  it.each([true, false])('shows configured legal links in the footer for compact=%s', (compact) => {
+    const wrapper = mountHome({
+      compact_home_enabled: compact,
+      login_agreement_documents: [
+        { id: 'terms', title: 'Terms', content_md: '# Terms' },
+        { id: 'empty', title: 'Empty draft', content_md: '' },
+      ],
+    })
+
+    expect(wrapper.get('footer').text()).toContain('Test site')
+    expect(wrapper.get('footer').text()).toContain('Terms')
+    expect(wrapper.get('footer').text()).not.toContain('Empty draft')
+    expect(wrapper.get('footer').findComponent(RouterLinkStub).props('to')).toBe('/legal/terms')
   })
 
   it('hides the model plaza link when the feature is disabled', () => {

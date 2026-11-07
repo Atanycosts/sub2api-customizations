@@ -139,6 +139,15 @@ export default {
     noKeysYet: 'No API keys yet',
     createFirstKey: 'Create your first API key to get started with the API.',
     keyCreatedSuccess: 'API key created successfully',
+    keyCreated: {
+      title: 'API key created',
+      description: 'Your new key is ready. Copy it now, or continue straight to the client setup guide.',
+      keyLabel: 'API Key',
+      groupLabel: 'Group: {name}',
+      nextHint: 'Choose your client to copy the endpoint and configuration, then make your first request.',
+      configureNow: 'Set it up now',
+      later: 'Later'
+    },
     keyUpdatedSuccess: 'API key updated successfully',
     keyDeletedSuccess: 'API key deleted successfully',
     keyEnabledSuccess: 'API key enabled successfully',
@@ -663,6 +672,7 @@ export default {
     loadFailed: 'Failed to load model plaza',
     noSearchResult: 'No matching models',
     anonymousHint: 'Sign in to see your exclusive groups and personal rates',
+    createKey: 'Create a key for this group',
     filters: {
       platformLabel: 'Platform',
       groupLabel: 'Group',

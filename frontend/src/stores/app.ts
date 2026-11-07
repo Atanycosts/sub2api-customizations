@@ -13,6 +13,7 @@ import {
   type ReleaseInfo
 } from '@/api/admin/system'
 import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
+import { DEFAULT_SITE_NAME } from '@/utils/branding'
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
@@ -26,7 +27,7 @@ export const useAppStore = defineStore('app', () => {
   // Public settings cache state
   const publicSettingsLoaded = ref<boolean>(false)
   const publicSettingsLoading = ref<boolean>(false)
-  const siteName = ref<string>('Sub2API')
+  const siteName = ref<string>(DEFAULT_SITE_NAME)
   const siteLogo = ref<string>('')
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
@@ -51,6 +52,9 @@ export const useAppStore = defineStore('app', () => {
 
   const hasActiveToasts = computed(() => toasts.value.length > 0)
   const backendModeEnabled = computed(() => cachedPublicSettings.value?.backend_mode_enabled ?? false)
+  const siteSubtitle = computed(() =>
+    cachedPublicSettings.value?.site_subtitle?.trim() || i18n.global.t('home.cortex.leadSub')
+  )
 
   const loadingCount = ref<number>(0)
 
@@ -294,7 +298,7 @@ export const useAppStore = defineStore('app', () => {
       window.__APP_CONFIG__ = { ...config }
     }
     cachedPublicSettings.value = config
-    siteName.value = config.site_name || 'Sub2API'
+    siteName.value = config.site_name?.trim() || DEFAULT_SITE_NAME
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
@@ -448,6 +452,7 @@ export const useAppStore = defineStore('app', () => {
     // Public settings state
     publicSettingsLoaded,
     siteName,
+    siteSubtitle,
     siteLogo,
     siteVersion,
     contactInfo,

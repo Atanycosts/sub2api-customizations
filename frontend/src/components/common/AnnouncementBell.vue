@@ -5,12 +5,15 @@
       @click="openModal"
       class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
-      :aria-label="t('announcements.title')"
+      :aria-label="unreadCount > 0 ? t('announcements.unreadCount', { count: unreadCount }) : t('announcements.title')"
+      :aria-expanded="isModalOpen"
+      aria-haspopup="dialog"
     >
       <Icon name="bell" size="md" />
       <!-- 未读红点 -->
       <span
         v-if="unreadCount > 0"
+        aria-hidden="true"
         class="absolute right-1 top-1 flex h-2 w-2"
       >
         <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75"></span>

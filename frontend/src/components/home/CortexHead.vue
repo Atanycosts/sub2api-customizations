@@ -50,16 +50,6 @@
         </g>
       </svg>
     </div>
-    <div class="cx-frame">
-      <div class="cx-frame-top">
-        <span class="cx-fig-title">INTELLIGENCE / POINT-CLOUD SCAN</span>
-        <span class="cx-fig-meta">FIG. 01 — V0.2.19</span>
-      </div>
-      <div class="cx-frame-bottom">
-        <span class="cx-fig-meta">DEPTH 12.4</span>
-        <span class="cx-fig-meta">X 072.4 / Y 118.6</span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -289,29 +279,10 @@ onBeforeUnmount(() => {
   font-size: 10px;
   letter-spacing: 1.4px;
 }
-.cx-frame {
-  position: absolute;
-  z-index: 3;
-  inset: 70px clamp(18px, 4vw, 64px) 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  letter-spacing: 1px;
-}
-.cx-frame-top, .cx-frame-bottom { display: flex; justify-content: space-between; gap: 12px; }
-.cx-fig-title { opacity: 0.9; }
-.cx-fig-meta { opacity: 0.75; }
 .cx-fig-tick { fill-opacity: 0.3; }
 @media (max-width: 860px) {
   .cx-head-art { width: 130vw; height: 78vh; top: 42%; }
   .cx-labels { font-size: 18px; letter-spacing: 0.8px; }
-}
-@media (max-width: 480px) {
-  .cx-frame { font-size: 8px; letter-spacing: 0.5px; }
-}
-@media (max-width: 340px) {
-  .cx-frame-top { flex-direction: column; gap: 4px; }
 }
 .cx-orbit {
   transform-origin: 360px 352px;

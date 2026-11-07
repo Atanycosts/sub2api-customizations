@@ -4,6 +4,8 @@
 
 
 :root {
+  --radius-public: 2px;
+  --radius-control: 8px;
   /* primary */
   --c-primary-50: 238 250 246;
   --c-primary-100: 211 244 232;
@@ -38,6 +40,8 @@
   --c-surface-sunken: 232 234 230;
   --c-ink: 11 20 24;
   --c-ink-muted: 90 104 112;
+  --cx-action-bg: rgb(var(--c-primary-700));
+  --cx-action-ink: white;
 }
 
 .dark {
@@ -46,6 +50,8 @@
   --c-surface-sunken: 12 18 23;
   --c-ink: 234 242 244;
   --c-ink-muted: 147 166 176;
+  --cx-action-bg: rgb(var(--c-primary-400));
+  --cx-action-ink: rgb(var(--c-dark-950));
 }
 
 /* ------------------------------------------------------------------

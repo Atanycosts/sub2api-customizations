@@ -1,6 +1,7 @@
 import { sanitizeUrl } from '@/utils/url'
 
 export const DEFAULT_SITE_LOGO_URL = '/logo.svg?v=20261107'
+export const DEFAULT_SITE_NAME = 'Sub2API'
 
 export function updateFavicon(logoUrl: string): void {
   const faviconUrl = sanitizeUrl(logoUrl, {

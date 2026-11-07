@@ -11,6 +11,7 @@
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
         ]"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
+        :aria-expanded="dropdownOpen"
       >
         <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
         <span
@@ -18,7 +19,8 @@
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
         ></span>
         <!-- Update indicator -->
-        <span v-if="hasUpdate" class="relative flex h-2 w-2">
+        <span class="sr-only">{{ hasUpdate ? t('version.updateAvailable') : t('version.upToDate') }}</span>
+        <span v-if="hasUpdate" class="relative flex h-2 w-2" aria-hidden="true">
           <span
             class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
           ></span>

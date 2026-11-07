@@ -16,9 +16,9 @@
   <div
     v-else-if="compactHomeEnabled"
     data-testid="compact-home"
-    class="flex min-h-screen flex-col bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
+    class="cx-scope flex min-h-screen flex-col bg-surface text-ink"
   >
-    <header class="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-dark-800">
+    <header class="border-b border-ink/15 px-4 py-4 sm:px-6">
       <nav class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div class="flex min-w-0 flex-1 items-center gap-3">
           <SiteLogo
@@ -35,7 +35,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="public-icon-btn"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
@@ -43,14 +43,14 @@
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="btn btn-secondary btn-sm shrink-0"
             :title="t('nav.modelPlaza')"
           >
             <Icon name="grid" size="md" />
             <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
           </router-link>
           <button
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="public-icon-btn"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
@@ -59,7 +59,7 @@
           </button>
           <router-link
             :to="isAuthenticated ? dashboardPath : '/login'"
-            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+            class="btn btn-secondary min-h-10 shrink-0"
           >
             {{ isAuthenticated ? t('home.dashboard') : t('home.login') }}
           </router-link>
@@ -75,19 +75,17 @@
           class="mx-auto mb-6 h-20 w-20"
         />
         <h1 class="[overflow-wrap:anywhere] text-3xl font-bold md:text-4xl">{{ siteName }}</h1>
-        <p class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-gray-600 dark:text-dark-300">{{ siteSubtitle }}</p>
+        <p class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-ink-muted">{{ siteSubtitle }}</p>
         <router-link
           :to="isAuthenticated ? dashboardPath : '/login'"
-          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+          class="btn btn-primary mt-8 min-h-10"
         >
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
         </router-link>
       </div>
     </main>
 
-    <footer class="min-w-0 border-t border-gray-200 px-4 py-5 text-center text-sm text-gray-500 [overflow-wrap:anywhere] sm:px-6 dark:border-dark-800 dark:text-dark-400">
-      &copy; {{ currentYear }} {{ siteName }}
-    </footer>
+    <PublicFooter />
   </div>
 
   <!-- Default Home Page — CORTEX identity -->
@@ -191,6 +189,7 @@
       </section>
 
     </main>
+    <PublicFooter />
   </div>
 </template>
 
@@ -200,6 +199,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SiteLogo from '@/components/common/SiteLogo.vue'
+import PublicFooter from '@/components/common/PublicFooter.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CortexHead from '@/components/home/CortexHead.vue'
 import { sanitizeUrl } from '@/utils/url'
@@ -211,9 +211,9 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 
 // Site settings - directly from appStore (already initialized from injected config)
-const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
+const siteSubtitle = computed(() => appStore.siteSubtitle)
 const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
@@ -232,11 +232,7 @@ const isDark = ref(document.documentElement.classList.contains('dark'))
 // GitHub URL
 const githubUrl = 'https://github.com/Wei-Shaw/sub2api'
 
-// 副标题优先用站点配置里的 site_subtitle，没配就回落到 CORTEX 自己的文案
-const leadSubline = computed(() => {
-  const configured = appStore.cachedPublicSettings?.site_subtitle || ''
-  return configured && configured !== 'AI API Gateway Platform' ? configured : t('home.cortex.leadSub')
-})
+const leadSubline = siteSubtitle
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)
@@ -248,9 +244,6 @@ const showModelPlazaEntry = computed(
 )
 const isAdmin = computed(() => authStore.isAdmin)
 const dashboardPath = computed(() => isAdmin.value ? '/admin/dashboard' : '/dashboard')
-// Current year for footer
-const currentYear = computed(() => new Date().getFullYear())
-
 // Toggle theme
 function toggleTheme() {
   isDark.value = !isDark.value
@@ -347,14 +340,14 @@ onMounted(() => {
 .cx-nav-right { display: flex; align-items: center; gap: 6px; flex: none; }
 .cx-icon-btn {
   width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid transparent; border-radius: 2px; color: var(--cx-muted);
+  border: 1px solid transparent; border-radius: var(--radius-public); color: var(--cx-muted);
   transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
 .cx-icon-btn:hover { color: var(--cx-accent); border-color: var(--cx-line-2); background: var(--cx-panel); }
 .cx-nav-cta {
   margin-left: 8px; min-height: 36px; padding: 0 16px;
   display: inline-flex; align-items: center; gap: 8px;
-  border: 1px solid var(--cx-line-2); border-radius: 2px;
+  border: 1px solid var(--cx-line-2); border-radius: var(--radius-public);
   font-size: 12px; font-weight: 500; color: var(--cx-ink);
   transition: color 0.2s, border-color 0.2s;
 }
@@ -491,12 +484,12 @@ onMounted(() => {
 .cx-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .cx-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  min-height: 46px; padding: 0 24px; border-radius: 2px;
+  min-height: 46px; padding: 0 24px; border-radius: var(--radius-public);
   font-size: 13px; font-weight: 500; white-space: nowrap;
   transition: transform 0.2s, color 0.2s, border-color 0.2s, filter 0.2s;
 }
 .cx-btn:hover { transform: translateY(-2px); }
-.cx-btn-primary { background: var(--cx-accent); border: 1px solid var(--cx-accent); color: var(--cx-bg); }
+.cx-btn-primary { background: var(--cx-action-bg); border: 1px solid var(--cx-action-bg); color: var(--cx-action-ink); }
 .cx-btn-primary:hover { filter: brightness(1.12); }
 .cx-btn-ghost { border: 1px solid var(--cx-line-2); color: var(--cx-ink); }
 .cx-btn-ghost:hover { border-color: var(--cx-accent); color: var(--cx-accent); }

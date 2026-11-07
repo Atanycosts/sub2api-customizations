@@ -82,6 +82,7 @@ vi.mock('@/stores', () => ({
     clearPendingAuthSession: (...args: any[]) => clearPendingAuthSessionMock(...args),
   }),
   useAppStore: () => ({
+    siteName: 'Sub2API',
     showSuccess: (...args: any[]) => showSuccessMock(...args),
     showError: (...args: any[]) => showErrorMock(...args),
   }),
