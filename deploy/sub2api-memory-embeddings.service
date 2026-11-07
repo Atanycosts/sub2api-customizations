@@ -1,0 +1,27 @@
+[Unit]
+Description=Shared CPU embedding encoder for Sub2API account memory
+After=network.target
+
+[Service]
+Type=simple
+User=sub2api-embedding
+Group=sub2api-embedding
+WorkingDirectory=/var/lib/sub2api-embedding
+Environment=HF_HUB_OFFLINE=1
+Environment=TOKENIZERS_PARALLELISM=false
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/respire-runtime/embedding-venv/bin/python /opt/respire-runtime/memory-embeddings.py --directory /opt/respire-runtime/models/bge-small-zh-v1.5 --model sub2api-bge-small-zh-windowed-v1 --dimensions 512 --port 15168
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sub2api-embedding
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

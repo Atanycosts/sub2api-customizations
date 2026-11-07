@@ -1,6 +1,7 @@
 [Unit]
 Description=Provision dedicated account memory for active Sub2API users
-After=sub2api.service
+After=sub2api.service sub2api-memory-embeddings.service
+Requires=sub2api-memory-embeddings.service
 
 [Service]
 Type=oneshot

@@ -2,19 +2,17 @@
 """Provision product accounts into independent Respire Runtime libraries.
 
 Run as root on the production host. No existing library, key or binding is
-replaced. The JSON manifest is published only after all requested users pass
-Runtime identity and active-model checks; Sub2API admits additions on refresh.
+replaced. Each binding is published only after Runtime identity and the shared
+model are verified; Sub2API admits additions on refresh.
 """
 
 import argparse
 import fcntl
 import grp
-import hashlib
 import json
 import os
 from pathlib import Path
 import pwd
-import shutil
 import subprocess
 import sys
 import time
@@ -26,19 +24,26 @@ import yaml
 
 RELEASE = Path('/opt/respire-runtime/releases/1.0.20')
 MANIFEST = Path('/etc/sub2api/memory-bindings.json')
-PROFILE = 'bge-small-zh-v1.5'
-MODEL_FILES = {
-    'tokenizer.json': (
-        '48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26',
-        439125,
-    ),
-    'onnx/model_quantized.onnx': (
-        '15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc',
-        24010842,
-    ),
+PROFILE = 'sub2api-shared-small-v1'
+BACKEND = 'sub2api-shared-encoder-v1'
+ENCODER_MODEL = 'sub2api-bge-small-zh-windowed-v1'
+ENCODER_URL = 'http://127.0.0.1:15168'
+SHARED_PROFILE = {
+    'model_profile': {
+        'id': PROFILE,
+        'embedding': {
+            'model_id': ENCODER_MODEL,
+            'revision': '75c43b069aac4d136ba6bc1122f995fedcfd2781-window510-mean-v1',
+            'dimensions': 512, 'max_tokens': 8192, 'pooling': 'cls', 'normalize': True,
+            'query_prefix': '为这个句子生成表示以用于检索相关文章：',
+            'document_prefix': '', 'pad_token_id': 0, 'pad_to_max_tokens': False,
+        },
+    },
+    'backend_profile': {
+        'id': BACKEND, 'backend': 'host_transport', 'provider': 'sub2api',
+        'protocol': 'openai_embeddings', 'endpoint': ENCODER_URL + '/v1/embeddings',
+    },
 }
-MODEL_URL = ('https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/'
-             '75c43b069aac4d136ba6bc1122f995fedcfd2781/')
 
 
 def run(args, **kwargs):
@@ -62,27 +67,11 @@ def health(port):
         return json.load(response)
 
 
-def verify_model_file(path, digest, size):
-    return (path.is_file() and path.stat().st_size == size
-            and hashlib.sha256(path.read_bytes()).hexdigest() == digest)
-
-
-def prepare_models():
-    root = Path('/opt/respire-runtime/models') / PROFILE
-    for name, (digest, size) in MODEL_FILES.items():
-        target = root / name
-        if verify_model_file(target, digest, size):
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(target.name + '.download')
-        with urllib.request.urlopen(MODEL_URL + name, timeout=60) as response:
-            with temporary.open('wb') as output:
-                shutil.copyfileobj(response, output)
-        if not verify_model_file(temporary, digest, size):
-            raise RuntimeError(f'Model checksum failed: {name}')
-        temporary.chmod(0o644)
-        temporary.replace(target)
-    return root
+def verify_encoder():
+    with urllib.request.urlopen(ENCODER_URL + '/health', timeout=5) as response:
+        state = json.load(response)
+    if state.get('status') != 'ok' or state.get('model') != ENCODER_MODEL or state.get('dimensions') != 512:
+        raise RuntimeError('Shared encoder identity mismatch')
 
 
 def runtime_env(home, library, port):
@@ -93,7 +82,23 @@ def runtime_env(home, library, port):
     return env
 
 
-def provision(user_id, model_root):
+def wait_runtime(user_id, port, library):
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            state = health(port)
+            if state.get('store_ready'):
+                break
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'Runtime startup timed out for user {user_id}')
+        time.sleep(1)
+    if state.get('bin') != '1.0.20' or state.get('data_dir') != str(library):
+        raise RuntimeError(f'Runtime identity mismatch for user {user_id}')
+
+
+def provision(user_id):
     name = f'sub2api-memory{user_id}'
     home = Path('/var/lib') / name
     library = home / 'respire'
@@ -145,16 +150,10 @@ def provision(user_id, model_root):
     binary = bins / 'rsrs'
     if not binary.exists():
         binary.symlink_to(RELEASE / 'rsrs')
-    models = library / 'models'
-    models.mkdir(exist_ok=True)
-    os.chown(models, account.pw_uid, account.pw_gid)
-    model_link = models / PROFILE
-    if not model_link.exists():
-        model_link.symlink_to(model_root)
-    if not unit.exists():
-        unit.write_text(f'''[Unit]
+    unit_text = f'''[Unit]
 Description=Respire dedicated memory Runtime for Sub2API user {user_id}
-After=network.target
+After=network.target sub2api-memory-embeddings.service
+Wants=sub2api-memory-embeddings.service
 [Service]
 Type=simple
 User={name}
@@ -183,26 +182,19 @@ CPUQuota=100%
 TasksMax=64
 [Install]
 WantedBy=multi-user.target
-''')
+'''
+    if not unit.exists() or unit.read_text() != unit_text:
+        unit.write_text(unit_text)
         run(['systemctl', 'daemon-reload'])
     run(['systemctl', 'enable', '--now', name])
-    deadline = time.monotonic() + 60
-    while True:
-        try:
-            state = health(port)
-            if state.get('store_ready'):
-                break
-        except OSError:
-            pass
-        if time.monotonic() >= deadline:
-            raise RuntimeError(f'Runtime startup timed out for user {user_id}')
-        time.sleep(1)
-    if state.get('bin') != '1.0.20' or state.get('data_dir') != str(library):
-        raise RuntimeError(f'Runtime identity mismatch for user {user_id}')
+    wait_runtime(user_id, port, library)
     catalog = rpc(port, 'model.catalog', [])['summary']
     active = catalog.get('active')
-    if not active:
-        rpc(port, 'model.switch', [json.dumps({'model': PROFILE, 'backend': 'onnx', 'engine': 'cpu'})])
+    if not active or active.get('model') != PROFILE or active.get('backend') != BACKEND:
+        if active and active.get('model') not in ('bge-small-zh-v1.5', PROFILE):
+            raise RuntimeError(f'Unexpected existing model for user {user_id}')
+        rpc(port, 'model.configure', [json.dumps(SHARED_PROFILE)])
+        rpc(port, 'model.switch', [json.dumps({'model': PROFILE, 'backend': BACKEND, 'engine': 'cpu'})])
         deadline = time.monotonic() + 180
         while True:
             progress = rpc(port, 'model.progress', [])['summary']
@@ -212,8 +204,11 @@ WantedBy=multi-user.target
             if state == 'failed' or time.monotonic() >= deadline:
                 raise RuntimeError(f'Model preparation failed for user {user_id}; inspect model.progress')
             time.sleep(1)
+        # Drop the previous in-process ONNX session after the atomic switch.
+        run(['systemctl', 'restart', name])
+        wait_runtime(user_id, port, library)
         active = rpc(port, 'model.catalog', [])['summary']['active']
-    if active.get('model') != PROFILE:
+    if active.get('model') != PROFILE or active.get('backend') != BACKEND:
         raise RuntimeError(f'Unexpected existing model for user {user_id}')
     return {'user_id': user_id, 'base_url': f'http://127.0.0.1:{port}', 'data_dir': str(library)}
 
@@ -233,6 +228,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--user-id', type=int, help='Provision only this existing active product user')
     parser.add_argument('--config', type=Path, default=Path('/app/data/config.yaml'))
+    parser.add_argument('--reconcile-bindings', action='store_true',
+                        help='Verify managed bindings and switch prepared small-model tenants to shared inference')
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise RuntimeError('Run this deployment helper as root')
@@ -253,18 +250,26 @@ def main():
                 raise RuntimeError('Requested user is not active or has suspended memory')
             users = [args.user_id]
         added = []
-        pending = [user_id for user_id in users if user_id not in admitted]
+        pending = [user_id for user_id in users if user_id not in admitted
+                   or (args.reconcile_bindings and user_id not in static_ids)]
         if pending:
-            model_root = prepare_models()
+            verify_encoder()
             for user_id in pending:
                 available_kib = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines()
                                          if line.startswith('MemAvailable:')))
                 if available_kib < 256 * 1024:
                     raise RuntimeError('Insufficient memory to prepare another dedicated Runtime; increase host capacity')
-                bindings.append(provision(user_id, model_root))
+                old = next((b for b in bindings if b['user_id'] == user_id), None)
+                expected = {'user_id': user_id, 'base_url': f'http://127.0.0.1:{15169 + user_id}',
+                            'data_dir': f'/var/lib/sub2api-memory{user_id}/respire'}
+                if old is not None and old != expected:
+                    raise RuntimeError(f'Unexpected managed binding for user {user_id}')
+                binding = provision(user_id)
+                if old is None:
+                    bindings.append(binding)
+                    added.append(user_id)
                 # Each publication contains only fully prepared independent tenants.
                 publish(bindings)
-                added.append(user_id)
         elif not MANIFEST.exists():
             publish(bindings)
         print(json.dumps({'configured_user_ids': sorted(admitted | set(added)), 'added': added}))
