@@ -5,32 +5,41 @@
   >
     <!-- 分组头部:名称/平台/倍率徽章/专属/订阅徽章 + 描述 -->
     <header class="border-b border-gray-100 px-5 py-4 dark:border-dark-700/60">
-      <div class="flex flex-wrap items-center gap-2">
-        <GroupBadge
-          :name="group.name"
-          :platform="group.platform as GroupPlatform"
-          :subscription-type="(group.subscription_type || 'standard') as SubscriptionType"
-          :rate-multiplier="group.rate_multiplier"
-          :user-rate-multiplier="group.user_rate_multiplier ?? null"
-          :peak-rate-enabled="group.peak_rate_enabled"
-          :peak-start="group.peak_start"
-          :peak-end="group.peak_end"
-          :peak-rate-multiplier="group.peak_rate_multiplier"
-          always-show-rate
-        />
-        <span
-          v-if="group.is_exclusive"
-          class="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <GroupBadge
+            :name="group.name"
+            :platform="group.platform as GroupPlatform"
+            :subscription-type="(group.subscription_type || 'standard') as SubscriptionType"
+            :rate-multiplier="group.rate_multiplier"
+            :user-rate-multiplier="group.user_rate_multiplier ?? null"
+            :peak-rate-enabled="group.peak_rate_enabled"
+            :peak-start="group.peak_start"
+            :peak-end="group.peak_end"
+            :peak-rate-multiplier="group.peak_rate_multiplier"
+            always-show-rate
+          />
+          <span
+            v-if="group.is_exclusive"
+            class="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+          >
+            <Icon name="shield" size="xs" class="h-3 w-3" />
+            {{ t('modelPlaza.badges.exclusive') }}
+          </span>
+          <span
+            v-if="group.subscription_type === 'subscription'"
+            class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600 dark:bg-violet-900/20 dark:text-violet-400"
+          >
+            {{ t('modelPlaza.badges.subscription') }}
+          </span>
+        </div>
+        <router-link
+          :to="createKeyTarget"
+          class="inline-flex items-center gap-1 rounded-md border border-primary-300/70 px-2.5 py-1 text-xs font-medium text-primary-700 transition-colors hover:border-primary-500 hover:bg-primary-50 dark:border-primary-500/40 dark:text-primary-300 dark:hover:bg-primary-500/10"
         >
-          <Icon name="shield" size="xs" class="h-3 w-3" />
-          {{ t('modelPlaza.badges.exclusive') }}
-        </span>
-        <span
-          v-if="group.subscription_type === 'subscription'"
-          class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600 dark:bg-violet-900/20 dark:text-violet-400"
-        >
-          {{ t('modelPlaza.badges.subscription') }}
-        </span>
+          <Icon name="plus" size="xs" class="h-3 w-3" />
+          {{ t('modelPlaza.createKey') }}
+        </router-link>
       </div>
       <p v-if="group.description" class="mt-2 text-sm text-gray-500 dark:text-dark-400">
         {{ group.description }}
@@ -100,6 +109,12 @@ const peakWindow = computed(() => {
     serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset)
   )
 })
+
+/** 带着分组上下文进入密钥创建，未登录时由路由守卫转登录并带回目标地址。 */
+const createKeyTarget = computed(() => ({
+  path: '/keys',
+  query: { group: String(props.group.id) }
+}))
 
 const peakNote = computed(() => {
   if (!peakWindow.value) return ''

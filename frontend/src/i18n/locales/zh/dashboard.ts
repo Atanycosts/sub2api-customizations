@@ -139,6 +139,15 @@ export default {
     noKeysYet: '暂无 API 密钥',
     createFirstKey: '创建您的第一个 API 密钥以开始使用 API。',
     keyCreatedSuccess: 'API 密钥创建成功',
+    keyCreated: {
+      title: 'API 密钥已创建',
+      description: '新密钥已生成。你可以现在复制保存，或直接进入客户端接入配置。',
+      keyLabel: 'API 密钥',
+      groupLabel: '分组：{name}',
+      nextHint: '下一步选择你的客户端，复制端点和配置，然后发起第一次请求。',
+      configureNow: '立即配置',
+      later: '稍后'
+    },
     keyUpdatedSuccess: 'API 密钥更新成功',
     keyDeletedSuccess: 'API 密钥删除成功',
     keyEnabledSuccess: 'API 密钥已启用',
@@ -668,6 +677,7 @@ export default {
     loadFailed: '加载模型广场失败',
     noSearchResult: '没有匹配的模型',
     anonymousHint: '登录后可查看你的专属分组与专属倍率',
+    createKey: '用此分组创建密钥',
     filters: {
       platformLabel: '平台',
       groupLabel: '分组',

@@ -5,6 +5,10 @@
       @click="toggleTooltip"
       class="flex cursor-pointer items-center gap-2 rounded-xl bg-purple-50 px-3 py-1.5 transition-colors hover:bg-purple-100 dark:bg-purple-900/20 dark:hover:bg-purple-900/30"
       :title="t('subscriptionProgress.viewDetails')"
+      :aria-label="`${t('subscriptionProgress.viewDetails')} · ${t('subscriptionProgress.activeCount', { count: activeSubscriptions.length })}`"
+      :aria-expanded="tooltipOpen"
+      :aria-controls="tooltipId"
+      @keydown.esc="closeTooltip"
     >
       <Icon name="creditCard" size="sm" class="text-purple-600 dark:text-purple-400" />
       <div class="flex items-center gap-1.5">
@@ -24,10 +28,17 @@
     </button>
 
     <!-- Hover/Click Tooltip -->
+    <Teleport to="body">
     <transition name="dropdown">
       <div
         v-if="tooltipOpen"
-        class="absolute right-0 z-50 mt-2 w-[340px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
+        :id="tooltipId"
+        ref="tooltipRef"
+        role="region"
+        :aria-label="t('subscriptionProgress.title')"
+        :style="tooltipStyle"
+        class="fixed z-50 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
+        @keydown.esc="closeTooltip"
       >
         <div class="border-b border-gray-100 p-3 dark:border-dark-700">
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
@@ -45,7 +56,7 @@
             class="border-b border-gray-50 p-3 last:border-b-0 dark:border-dark-700/50"
           >
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">
+              <span class="min-w-0 break-words text-sm font-medium text-gray-900 dark:text-white">
                 {{ subscription.group?.name || `Group #${subscription.group_id}` }}
               </span>
               <span
@@ -174,11 +185,12 @@
         </div>
       </div>
     </transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useSubscriptionStore } from '@/stores'
@@ -191,7 +203,10 @@ const { t } = useI18n()
 const subscriptionStore = useSubscriptionStore()
 
 const containerRef = ref<HTMLElement | null>(null)
+const tooltipRef = ref<HTMLElement | null>(null)
+const tooltipId = useId()
 const tooltipOpen = ref(false)
+const tooltipStyle = ref<Record<string, string>>({})
 
 // Use store data instead of local state
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
@@ -283,8 +298,29 @@ function getDaysRemainingClass(expiresAt: string): string {
   return 'text-gray-500 dark:text-dark-400'
 }
 
-function toggleTooltip() {
+function positionTooltip() {
+  if (!tooltipOpen.value || !containerRef.value) return
+  const margin = 16
+  const width = Math.min(340, window.innerWidth - margin * 2)
+  const rect = containerRef.value.getBoundingClientRect()
+  const height = tooltipRef.value?.offsetHeight ?? 0
+  const left = Math.max(margin, Math.min(rect.right - width, window.innerWidth - margin - width))
+  const top = Math.max(margin, Math.min(rect.bottom + 8, window.innerHeight - margin - height))
+  tooltipStyle.value = {
+    width: `${width}px`,
+    left: `${left}px`,
+    top: `${top}px`,
+    maxHeight: `calc(100vh - ${margin * 2}px)`,
+  }
+}
+
+async function toggleTooltip() {
   tooltipOpen.value = !tooltipOpen.value
+  if (tooltipOpen.value) {
+    positionTooltip()
+    await nextTick()
+    positionTooltip()
+  }
 }
 
 function closeTooltip() {
@@ -292,13 +328,16 @@ function closeTooltip() {
 }
 
 function handleClickOutside(event: MouseEvent) {
-  if (containerRef.value && !containerRef.value.contains(event.target as Node)) {
+  const target = event.target as Node
+  if (!containerRef.value?.contains(target) && !tooltipRef.value?.contains(target)) {
     closeTooltip()
   }
 }
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('resize', positionTooltip)
+  window.addEventListener('scroll', positionTooltip, true)
   // Trigger initial fetch if not already loaded
   // The actual data loading is handled by App.vue globally
   if (!subscriptionFeatureEnabled.value) return
@@ -309,6 +348,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', positionTooltip)
+  window.removeEventListener('scroll', positionTooltip, true)
 })
 </script>
 

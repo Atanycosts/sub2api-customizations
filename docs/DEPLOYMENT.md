@@ -14,11 +14,11 @@
 | 地址 | `http://103.236.85.237:7788` |
 | 服务 | `sub2api.service`（systemd，独立用户 `sub2api`） |
 | 生效二进制 | `/opt/sub2api/sub2api` → `/opt/sub2api/releases/<label>/sub2api` |
-| 当前 release | `ui-memory-20261107-polish`，sha256 `75f2f9aa…15731cb8`；入口 `/assets/index-Cu5omS9v.js` |
+| 当前 release | `ui-public-20261107-1528`，sha256 `7ffb89b7…bfd7b79d`；入口 `/assets/index-D-gpDLrb.js` |
 | 页面版本 | `v0.2.19-ui-memory`（版本号不带时间；release 目录保留独立标识） |
 | 依赖 | 同机 PostgreSQL（开机自动执行迁移）+ Redis DB 0 |
 | 配置 | 生效 `/app/data/config.yaml`；回退 `/opt/sub2api/config.yaml` |
-| 回滚点 | `/opt/sub2api/releases/ui-memory-20261107-0250/sub2api` |
+| 回滚点 | `/opt/sub2api/releases/ui-memory-20261107-polish/sub2api` |
 
 目录约定：
 

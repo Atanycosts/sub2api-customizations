@@ -89,6 +89,7 @@ export default {
 
   // Announcements Page
   announcements: {
+    unreadCount: 'Announcements · {count} unread',
     title: 'Announcements',
     description: 'View system announcements',
     unreadOnly: 'Show unread only',

@@ -83,7 +83,11 @@ function mountSection(g: ModelPlazaGroup) {
       stubs: {
         GroupBadge: true,
         Icon: true,
-        PlazaModelPricingTable: true
+        PlazaModelPricingTable: true,
+        RouterLink: {
+          props: ['to'],
+          template: '<a data-test="create-key-link" :data-to="JSON.stringify(to)"><slot /></a>'
+        }
       }
     }
   })
@@ -108,6 +112,13 @@ describe('PlazaGroupSection 长上下文说明', () => {
   it('分组开启阶梯时不显示', () => {
     const wrapper = mountSection(group({ long_context_pricing_enabled: true }))
     expect(wrapper.text()).not.toContain(NOTE)
+  })
+
+  it('provides a create-key link carrying the group id', () => {
+    const wrapper = mountSection(group({ id: 7 }))
+    const link = wrapper.get('[data-test="create-key-link"]')
+    expect(JSON.parse(link.attributes('data-to')!)).toEqual({ path: '/keys', query: { group: '7' } })
+    expect(wrapper.text()).toContain('modelPlaza.createKey')
   })
 
   it('分组关闭但没有官方阶梯模型时不显示', () => {

@@ -327,6 +327,23 @@ describe('useAppStore', () => {
   // --- 公开设置 ---
 
   describe('公开设置加载', () => {
+    it('keeps a configured subtitle verbatim and updates the shared brand on refresh', async () => {
+      vi.mocked(getPublicSettings).mockResolvedValueOnce(createPublicSettings({
+        site_name: '  Site A  ', site_subtitle: 'AI API Gateway Platform',
+      }))
+      const store = useAppStore()
+      await store.fetchPublicSettings()
+      expect(store.siteName).toBe('Site A')
+      expect(store.siteSubtitle).toBe('AI API Gateway Platform')
+
+      vi.mocked(getPublicSettings).mockResolvedValueOnce(createPublicSettings({
+        site_name: 'Site B', site_subtitle: 'My service',
+      }))
+      await store.fetchPublicSettings(true)
+      expect(store.siteName).toBe('Site B')
+      expect(store.siteSubtitle).toBe('My service')
+    })
+
     it('并发调用复用并等待同一个请求，包括 force 调用', async () => {
       const deferred = createDeferred<PublicSettings>()
       vi.mocked(getPublicSettings).mockReturnValue(deferred.promise)

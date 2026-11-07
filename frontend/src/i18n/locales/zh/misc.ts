@@ -87,6 +87,7 @@ export default {
 
   // Announcements Page
   announcements: {
+    unreadCount: '公告 · {count}条未读',
     title: '公告',
     description: '查看系统公告',
     unreadOnly: '仅显示未读',

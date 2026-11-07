@@ -16,6 +16,7 @@ const {
   pushMock: vi.fn(),
   verifyActionMock: vi.fn(),
   appStoreMock: {
+    siteName: 'Sub2API',
     cachedPublicSettings: null as { promo_code_enabled?: boolean } | null,
     showError: (...args: unknown[]) => showErrorMock(...args),
     showSuccess: vi.fn(),

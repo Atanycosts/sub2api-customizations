@@ -27,6 +27,11 @@ const messages: Record<string, string> = {
   'keyUsage.dateRange30d': '30 Days',
   'keyUsage.dateRange90d': '90 Days',
   'keyUsage.dateRangeCustom': 'Custom',
+  'keyUsage.period5h': '5H',
+  'keyUsage.periodDay': 'day',
+  'keyUsage.period7d': '7D',
+  'keyUsage.periodWeek': 'week',
+  'keyUsage.periodMonth': 'month',
   'keyUsage.apply': 'Apply',
   'keyUsage.used': 'Used',
   'keyUsage.detailInfo': 'Detail Information',
@@ -104,6 +109,15 @@ vi.mock('@/stores', () => ({
     showInfo,
     showSuccess,
     showError,
+  }),
+}))
+
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({
+    get cachedPublicSettings() {
+      return appStoreState.cachedPublicSettings
+    },
+    siteName: 'Sub2API',
   }),
 }))
 
@@ -242,6 +256,28 @@ describe('KeyUsageView daily detail', () => {
     expect(text).toContain('10')
     expect(text).toContain('$0.12')
 
+    wrapper.unmount()
+  })
+
+  it('uses translated quota period labels after a subscription query', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        mode: 'wallet', balance: 5,
+        subscription: {
+          daily_limit_usd: 10, daily_usage_usd: 1,
+          weekly_limit_usd: 50, weekly_usage_usd: 2,
+          monthly_limit_usd: 100, monthly_usage_usd: 3,
+        },
+      }),
+    } as Response)
+    const wrapper = mount(KeyUsageView, { global: { stubs: { RouterLink: { template: '<a><slot /></a>' }, LocaleSwitcher: true, Icon: true } } })
+    await wrapper.get('#usage-api-key').setValue('sk-test-key')
+    await wrapper.get('#usage-api-key').trigger('keydown.enter')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Used Quota (day)')
+    expect(wrapper.text()).toContain('Used Quota (week)')
+    expect(wrapper.text()).toContain('Used Quota (month)')
     wrapper.unmount()
   })
 
