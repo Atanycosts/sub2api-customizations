@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -75,6 +77,19 @@ func signedThinkingHistoryBody() []byte {
 }
 
 func TestFilterThinkingBlocksSignedHistorySkipsDecode(t *testing.T) {
+	const childProcessEnv = "SUB2API_TEST_THINKING_ALLOCS_CHILD"
+	if os.Getenv(childProcessEnv) != "1" {
+		// AllocsPerRun reads process-wide allocation counters. Other service
+		// tests leave background workers running, so measure in a fresh process.
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		command := exec.Command(binary, "-test.run=^TestFilterThinkingBlocksSignedHistorySkipsDecode$")
+		command.Env = append(os.Environ(), childProcessEnv+"=1")
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "isolated allocation check failed:\n%s", output)
+		return
+	}
+
 	body := signedThinkingHistoryBody()
 	allocs := testing.AllocsPerRun(5, func() {
 		got := filterThinkingBlocksInternal(body, false)
