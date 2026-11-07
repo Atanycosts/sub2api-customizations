@@ -42,7 +42,10 @@ fork. Keep deployment secrets and runtime data out of Git.
 ## Current baseline
 
 The custom branch was reconnected to upstream commit `876b96d20` (2026-11-04)
-and merged with `upstream/main` at `d22e0724d` on 2026-11-07. The private
-`origin/main` includes that merge and the verified UI and account-memory
+and subsequently merged with `upstream/main` at `6b4b37db4` on 2026-11-07
+(v0.2.20 plus its version-file update). This adds the GPT-6.1 Terra Codex
+descriptor, effort validation, compatibility cache keys, and subscription
+long-context billing fixes while retaining the UI and account-memory
 customizations. The original imported snapshot and pre-update worktree are
-preserved locally under `backup/pre-upstream-20261107`.
+preserved locally under `backup/pre-upstream-20261107`. Production deployment
+status is tracked separately in `docs/DEPLOYMENT.md`.
