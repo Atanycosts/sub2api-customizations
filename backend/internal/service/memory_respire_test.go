@@ -7,15 +7,64 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRespireProvisionedBindingsAreAdditiveAndIsolated(t *testing.T) {
+	first := newRespireMemoryFixture(t)
+	second := newRespireMemoryFixture(t)
+	second.dataDir = "/srv/respire/u8"
+	p := first.provider(t, RespireMemoryOptions{})
+	binding := RespireMemoryBinding{UserID: 8, BaseURL: second.server.URL, DataDir: second.dataDir}
+	require.NoError(t, p.AddBindings([]RespireMemoryBinding{binding}))
+	require.Equal(t, []int64{7, 8}, p.UserIDs())
+	turn := MemoryTurn{EventID: "new-user-event", Scope: MemoryScope{UserID: 8}, UserText: "only second account", CreatedAt: time.Now()}
+	require.NoError(t, p.Archive(context.Background(), turn))
+	require.Empty(t, first.requests, "admitting a new account must not route its write to the existing library")
+	require.Equal(t, 1, second.writeCount)
+	require.NoError(t, p.AddBindings([]RespireMemoryBinding{binding}), "same manifest is idempotent")
+	require.NoError(t, p.AddBindings(nil), "manifest shrink must not remove existing tenant admission")
+	require.True(t, p.HasUser(8))
+	require.Error(t, p.AddBindings([]RespireMemoryBinding{{UserID: 8, BaseURL: first.server.URL, DataDir: first.dataDir}}))
+	require.Error(t, p.AddBindings([]RespireMemoryBinding{{UserID: 9, BaseURL: second.server.URL, DataDir: "/srv/respire/u9"}}))
+	require.Equal(t, []int64{7, 8}, p.UserIDs(), "invalid update must preserve all existing bindings")
+}
+
+func TestMemoryGatewayRefreshAdmitsOnlyValidatedManifestUsers(t *testing.T) {
+	first := newRespireMemoryFixture(t)
+	second := newRespireMemoryFixture(t)
+	second.dataDir = "/srv/respire/u8"
+	provider := first.provider(t, RespireMemoryOptions{})
+	file := filepath.Join(t.TempDir(), "bindings.json")
+	repo := &memoryArchiveScopeRepository{}
+	g := NewMemoryGateway(provider, repo, MemoryGatewayOptions{UserIDs: []int64{7}})
+	g.runtime, g.bindingsFile = provider, file
+	worker := NewMemoryArchiveWorker(repo, provider, MemoryArchiveWorkerOptions{UserScope: provider.UserIDs})
+	t.Cleanup(worker.Stop)
+	bindings := []config.MemoryRuntimeBinding{{UserID: 8, BaseURL: second.server.URL, DataDir: second.dataDir}}
+	encoded, err := json.Marshal(bindings)
+	require.NoError(t, err)
+	require.False(t, g.EnabledFor(8))
+	require.NoError(t, os.WriteFile(file, encoded, 0600))
+	require.NoError(t, g.reloadBindings())
+	require.True(t, g.EnabledFor(8))
+	require.NoError(t, worker.RunOnce(context.Background()))
+	require.Equal(t, []int64{7, 8}, repo.userIDs, "worker admission follows the same validated provider snapshot")
+	require.NoError(t, os.WriteFile(file, []byte(`[{"user_id":9`), 0600))
+	require.Error(t, g.reloadBindings())
+	require.True(t, g.EnabledFor(8))
+	require.False(t, g.EnabledFor(9))
+}
 
 // These fixtures mirror fixed v1.0.20 output structs and command envelopes.
 // They prove the adapter contract, not a live Core model or deployment.

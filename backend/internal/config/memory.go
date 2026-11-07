@@ -1,9 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 )
@@ -13,6 +15,7 @@ import (
 type MemoryConfig struct {
 	Enabled          bool                   `mapstructure:"enabled"`
 	Bindings         []MemoryRuntimeBinding `mapstructure:"bindings"`
+	BindingsFile     string                 `mapstructure:"bindings_file"`
 	RecallTimeoutMS  int                    `mapstructure:"recall_timeout_ms"`
 	ArchiveTimeoutMS int                    `mapstructure:"archive_timeout_ms"`
 	EnqueueTimeoutMS int                    `mapstructure:"enqueue_timeout_ms"`
@@ -27,16 +30,33 @@ type MemoryConfig struct {
 }
 
 type MemoryRuntimeBinding struct {
-	UserID  int64  `mapstructure:"user_id"`
-	BaseURL string `mapstructure:"base_url"`
-	DataDir string `mapstructure:"data_dir"`
+	UserID  int64  `mapstructure:"user_id" json:"user_id"`
+	BaseURL string `mapstructure:"base_url" json:"base_url"`
+	DataDir string `mapstructure:"data_dir" json:"data_dir"`
+}
+
+// ReadMemoryRuntimeBindings reads an operator-owned, atomically published list.
+// A binding is published only after its dedicated Runtime has been provisioned.
+func ReadMemoryRuntimeBindings(filename string) ([]MemoryRuntimeBinding, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	var bindings []MemoryRuntimeBinding
+	if err := json.Unmarshal(data, &bindings); err != nil {
+		return nil, err
+	}
+	return bindings, nil
 }
 
 func (c MemoryConfig) Validate() error {
 	if !c.Enabled {
 		return nil
 	}
-	if len(c.Bindings) == 0 {
+	if c.BindingsFile != "" && (!filepath.IsAbs(c.BindingsFile) || filepath.Clean(c.BindingsFile) != c.BindingsFile) {
+		return fmt.Errorf("memory.bindings_file must be a canonical absolute path")
+	}
+	if len(c.Bindings) == 0 && c.BindingsFile == "" {
 		return fmt.Errorf("memory.bindings requires at least one dedicated product-user Runtime")
 	}
 	users, endpoints, dirs := map[int64]bool{}, map[string]bool{}, map[string]bool{}

@@ -1,12 +1,12 @@
 # Sub2API 服务端 Respire 记忆实施方案
 
-更新：2026-11-06（Asia/Shanghai）。服务端文本 MVP 已完成 unit、PostgreSQL component 和真实生产 Runtime 验收，并部署到 103.236.85.237；当前只按显式配置绑定产品用户 1。完整发布、回滚和限制见 [docs-local/respire-deployment-20261106/FINAL-DEPLOYMENT-STATUS.md](../docs-local/respire-deployment-20261106/FINAL-DEPLOYMENT-STATUS.md)，实现审阅见 [RESPIRE_INTEGRATION_REVIEW.md](RESPIRE_INTEGRATION_REVIEW.md)。
+更新：2026-11-07（Asia/Shanghai）。服务端文本 MVP 已完成 unit、PostgreSQL component 和真实生产 Runtime 验收。全站默认开通已获用户授权，新增独立 Runtime 供应和绑定清单热加载；实际已发布范围、版本和回滚点以 [DEPLOYMENT.md](DEPLOYMENT.md) 为准，实现审阅见 [RESPIRE_INTEGRATION_REVIEW.md](RESPIRE_INTEGRATION_REVIEW.md)。
 
 ## 产品方向
 
 Sub2API 根据鉴权所得的产品用户账号提供检索、上下文注入和异步来源归档；同一用户跨 API Key、客户端、模型及上游复用记忆。普通用户无需安装本地 Respire，本地端后续作为可选协作层。服务器已有的密文同步 Server 与可读写记忆的 Runtime 是不同组件。
 
-产品最终的默认启用范围尚未确定。生产当前使用 `memory.enabled: true` 加显式用户绑定作为灰度边界：用户 1 已绑定独立服务器 Runtime，其他用户仍未绑定，不要求本地安装插件。新增用户前必须单独准备独立库、端口、凭据和资源预算并重复验收。
+产品默认向全站活跃账号开通，不要求本地安装插件；用户主动停用仍保留。用户 1 使用原有 M3 独立库，新增账号使用轻量 `bge-small-zh-v1.5` 独立库。`deploy/provision-account-memory.py` 按产品账号供应独立 OS 用户、密钥、库和 loopback 端口，完成健康与模型准备后原子发布 `memory.bindings_file`；定时服务每分钟检查新增活跃账号，网关每 5 秒加载已准备的新增绑定。供应失败不假报开通，也不重绑现有账号。资源随活跃库数量增长，需按实际并发和可用内存扩容。
 
 ## 已实现的调用链
 
@@ -65,7 +65,7 @@ worker 将本轮用户文字和助手可见文字写为 Respire `trivial/context
 
 持久状态包括 `pending`、`processing`、`submitted`、`retry_wait`、`needs_reconciliation`、`completed`、`failed`、`cancelled`。worker 在外部写入前先持久化 `submitted`；租约失效后的 submitted 只进入核对。只有明确的提交前临时故障才自动重试；未知写入先查 `runtime.result` 和读回，不盲目重放。核对次数有限，耗尽后保留待人工核对状态。
 
-worker 只能领取及维护本实例 `memory.bindings` 中的用户任务；空范围不领取，非法用户范围拒绝，配置切片由 worker 独立持有。多个实例共享数据库、各自绑定不同用户时，不能抢走其他实例的任务并将其误判失败。此限制不替代部署时确保同一用户始终映射到同一专用库。
+worker 只能领取及维护本实例已验证绑定中的用户任务；静态绑定来自 `memory.bindings`，新增供应来自 `memory.bindings_file`。空范围不领取，非法用户范围拒绝；worker 每次领取读取 provider 的绑定快照，与请求准入一致。多个实例共享数据库、各自绑定不同用户时，不能抢走其他实例的任务并将其误判失败。已有用户的库/端口不允许热更换，清单缩减不撤销已加载绑定；用户停用由数据库 fence 执行。
 
 每用户最多 1000 个未解决事件。完成、失败、取消后清除队列原文；其他原文在负责该用户的 worker 执行 Claim 维护时受 7 天保留期限制，停机或移除该用户绑定后不承诺定时执行清理。先恢复失效租约，再检查保留期，避免恢复任务绕过清理。完成回执和摘要仍保留，当前没有回执表容量清理功能。
 
@@ -84,6 +84,7 @@ worker 只能领取及维护本实例 `memory.bindings` 中的用户任务；空
 ```yaml
 memory:
   enabled: true
+  bindings_file: "/etc/sub2api/memory-bindings.json"
   bindings:
     - user_id: 42
       base_url: "http://127.0.0.1:15170"
@@ -134,4 +135,4 @@ memory:
 3. **成本和缓存。** 在计费改写前保留原始 upstream usage。现有 `ForceCacheBilling` 会改写 token 分类，不能作为真实 cache 命中。分别计量检索、注入、归档、Runtime 成本与回答质量，在固定任务上做关闭/开启对照，再决定缓存亲和策略。
 4. **规模化和本地协作。** 比较独立进程的资源成本与官方 SDK 多库能力；定义用户绑定、来源版本、单轮归档责任方、冲突和删除传播。安装本地客户端不自动授权读取或上传其资料。
 
-当前未实现语义回答缓存、全协议接入、全站默认启用、历史对话回填、自动账号 Runtime 供应、个人库迁移或本地同步协商；未测得节省成本的结论。
+当前未实现语义回答缓存、全协议接入、历史对话回填、个人库迁移或本地同步协商；未测得节省成本的结论。全站开通与自动供应只改变账号准入，不扩大上述文字协议支持范围，也不增加 important 结论提炼。

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -25,6 +27,12 @@ type MemoryGateway struct {
 	users         map[int64]bool
 	recallTimeout time.Duration
 	worker        *MemoryArchiveWorker
+	runtime       *RespireMemoryProvider
+	bindingsFile  string
+	reloadStop    chan struct{}
+	reloadWG      sync.WaitGroup
+	reloadStart   sync.Once
+	reloadClose   sync.Once
 }
 
 func NewMemoryGateway(provider MemoryProvider, repo MemoryArchiveRepository, options MemoryGatewayOptions) *MemoryGateway {
@@ -48,9 +56,22 @@ func ProvideMemoryGateway(cfg *config.Config, repo MemoryArchiveRepository) (*Me
 	if err := cfg.Memory.Validate(); err != nil {
 		return nil, err
 	}
-	bindings := make([]RespireMemoryBinding, 0, len(cfg.Memory.Bindings))
-	ids := make([]int64, 0, len(cfg.Memory.Bindings))
-	for _, b := range cfg.Memory.Bindings {
+	configured := append([]config.MemoryRuntimeBinding(nil), cfg.Memory.Bindings...)
+	if cfg.Memory.BindingsFile != "" {
+		extra, err := config.ReadMemoryRuntimeBindings(cfg.Memory.BindingsFile)
+		if err != nil {
+			return nil, fmt.Errorf("read memory bindings: %w", err)
+		}
+		configured = append(configured, extra...)
+	}
+	complete := cfg.Memory
+	complete.Bindings = configured
+	if err := complete.Validate(); err != nil {
+		return nil, err
+	}
+	bindings := make([]RespireMemoryBinding, 0, len(configured))
+	ids := make([]int64, 0, len(configured))
+	for _, b := range configured {
 		bindings = append(bindings, RespireMemoryBinding{UserID: b.UserID, BaseURL: b.BaseURL, DataDir: b.DataDir})
 		ids = append(ids, b.UserID)
 	}
@@ -63,8 +84,12 @@ func ProvideMemoryGateway(cfg *config.Config, repo MemoryArchiveRepository) (*Me
 		return nil, fmt.Errorf("configure memory: %w", err)
 	}
 	g := NewMemoryGateway(provider, repo, MemoryGatewayOptions{UserIDs: ids, RecallTimeout: time.Duration(cfg.Memory.RecallTimeoutMS) * time.Millisecond})
+	g.runtime = provider
+	g.bindingsFile = cfg.Memory.BindingsFile
+	g.reloadStop = make(chan struct{})
 	g.worker = NewMemoryArchiveWorker(repo, provider, MemoryArchiveWorkerOptions{
 		UserIDs:          ids,
+		UserScope:        provider.UserIDs,
 		PollInterval:     time.Duration(cfg.Memory.PollIntervalMS) * time.Millisecond,
 		Lease:            time.Duration(cfg.Memory.LeaseSeconds) * time.Second,
 		OperationTimeout: time.Duration(cfg.Memory.ArchiveTimeoutMS) * time.Millisecond,
@@ -74,7 +99,13 @@ func ProvideMemoryGateway(cfg *config.Config, repo MemoryArchiveRepository) (*Me
 }
 
 func (g *MemoryGateway) EnabledFor(userID int64) bool {
-	return g != nil && g.repo != nil && g.users[userID]
+	if g == nil || g.repo == nil {
+		return false
+	}
+	if g.runtime != nil {
+		return g.runtime.HasUser(userID)
+	}
+	return g.users[userID]
 }
 
 func (g *MemoryGateway) Recall(ctx context.Context, request MemoryRecallRequest) (MemoryRecallResult, error) {
@@ -137,7 +168,14 @@ func (g *MemoryGateway) Overview(ctx context.Context, userID int64) (MemoryArchi
 }
 
 func (g *MemoryGateway) Stop() {
-	if g != nil && g.worker != nil {
+	if g == nil {
+		return
+	}
+	if g.reloadStop != nil {
+		g.reloadClose.Do(func() { close(g.reloadStop) })
+		g.reloadWG.Wait()
+	}
+	if g.worker != nil {
 		g.worker.Stop()
 	}
 }
@@ -147,7 +185,39 @@ func (g *MemoryGateway) Stop() {
 func (g *MemoryGateway) Start() {
 	if g != nil && g.worker != nil {
 		g.worker.Start()
+		if g.bindingsFile != "" {
+			g.reloadStart.Do(func() {
+				g.reloadWG.Add(1)
+				go func() {
+					defer g.reloadWG.Done()
+					ticker := time.NewTicker(5 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-g.reloadStop:
+							return
+						case <-ticker.C:
+							if err := g.reloadBindings(); err != nil {
+								slog.Warn("memory runtime binding refresh failed")
+							}
+						}
+					}
+				}()
+			})
+		}
 	}
+}
+
+func (g *MemoryGateway) reloadBindings() error {
+	configured, err := config.ReadMemoryRuntimeBindings(g.bindingsFile)
+	if err != nil {
+		return err
+	}
+	bindings := make([]RespireMemoryBinding, 0, len(configured))
+	for _, b := range configured {
+		bindings = append(bindings, RespireMemoryBinding{UserID: b.UserID, BaseURL: b.BaseURL, DataDir: b.DataDir})
+	}
+	return g.runtime.AddBindings(bindings)
 }
 
 // MemoryErrorReason is a bounded diagnostic code, never a raw model, database

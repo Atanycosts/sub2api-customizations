@@ -2428,6 +2428,7 @@ func setDefaults() {
 	viper.SetDefault("plugins.start_timeout_seconds", 15)
 	viper.SetDefault("memory.enabled", false)
 	viper.SetDefault("memory.bindings", []MemoryRuntimeBinding{})
+	viper.SetDefault("memory.bindings_file", "")
 	viper.SetDefault("memory.recall_timeout_ms", 300)
 	viper.SetDefault("memory.archive_timeout_ms", 120000)
 	viper.SetDefault("memory.enqueue_timeout_ms", 500)

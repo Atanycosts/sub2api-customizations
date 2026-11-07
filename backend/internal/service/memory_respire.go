@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -63,9 +65,58 @@ func respireMemoryFailure(op, code string, unknown, retryable bool, cause error)
 }
 
 type RespireMemoryProvider struct {
+	mu       sync.RWMutex
 	bindings map[int64]RespireMemoryBinding
 	client   *http.Client
 	options  RespireMemoryOptions
+}
+
+// AddBindings admits newly provisioned libraries. Existing users can never be
+// rebound or removed by a manifest refresh; in-flight requests keep their vault.
+func (p *RespireMemoryProvider) AddBindings(bindings []RespireMemoryBinding) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	all := make([]RespireMemoryBinding, 0, len(p.bindings)+len(bindings))
+	for _, binding := range p.bindings {
+		all = append(all, binding)
+	}
+	for _, binding := range bindings {
+		binding.BaseURL = strings.TrimRight(binding.BaseURL, "/")
+		if old, found := p.bindings[binding.UserID]; found {
+			if old != binding {
+				return respireMemoryFailure("configure", "binding_is_immutable", false, false, nil)
+			}
+			continue
+		}
+		all = append(all, binding)
+	}
+	if len(all) == len(p.bindings) {
+		return nil
+	}
+	validated, err := NewRespireMemoryProvider(all, p.options)
+	if err != nil {
+		return err
+	}
+	p.bindings = validated.bindings
+	return nil
+}
+
+func (p *RespireMemoryProvider) UserIDs() []int64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	ids := make([]int64, 0, len(p.bindings))
+	for id := range p.bindings {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+func (p *RespireMemoryProvider) HasUser(userID int64) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	_, found := p.bindings[userID]
+	return found
 }
 
 var _ MemoryProvider = (*RespireMemoryProvider)(nil)
@@ -180,7 +231,9 @@ func (p *RespireMemoryProvider) binding(scope MemoryScope, operation string) (Re
 	if scope.ProjectID != "" || scope.ConversationID != "" {
 		return RespireMemoryBinding{}, respireMemoryFailure(operation, "scoped_retrieval_unsupported", false, false, nil)
 	}
+	p.mu.RLock()
 	binding, found := p.bindings[scope.UserID]
+	p.mu.RUnlock()
 	if !found {
 		return RespireMemoryBinding{}, respireMemoryFailure(operation, "user_not_bound", false, false, nil)
 	}

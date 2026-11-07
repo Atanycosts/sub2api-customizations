@@ -1,0 +1,9 @@
+[Unit]
+Description=Enable account memory for newly registered Sub2API users
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+
+[Install]
+WantedBy=timers.target

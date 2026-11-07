@@ -78,6 +78,9 @@ server:
 memory:
   enabled: false
   bindings: []
+  # Optional operator-owned JSON list of newly provisioned dedicated Runtimes.
+  # Refreshed every 5 seconds; existing user bindings cannot be reassigned.
+  bindings_file: ""
   # - user_id: 42
   #   base_url: "http://127.0.0.1:15170"
   #   data_dir: "/srv/sub2api-memory/user42/accounts/server/default"
