@@ -14,11 +14,14 @@
 | 地址 | `http://103.236.85.237:7788` |
 | 服务 | `sub2api.service`（systemd，独立用户 `sub2api`） |
 | 生效二进制 | `/opt/sub2api/sub2api` → `/opt/sub2api/releases/<label>/sub2api` |
-| 当前 release | `ui-public-20261107-1528`，sha256 `7ffb89b7…bfd7b79d`；入口 `/assets/index-D-gpDLrb.js` |
-| 页面版本 | `v0.2.19-ui-memory`（版本号不带时间；release 目录保留独立标识） |
+| 当前 release | `upstream-0.2.20-20261107`，sha256 `1a1963c0…4bbfe3c`；入口 `/assets/index-D-gpDLrb.js` |
+| 来源提交 | `a5ec9fea74655ccb1492e69cd9f1563d1d79b809`（PR #3；上游基线 `6b4b37db4`） |
+| 页面版本 | `v0.2.20-ui-memory`（版本号不带时间；release 目录保留独立标识） |
 | 依赖 | 同机 PostgreSQL（开机自动执行迁移）+ Redis DB 0 |
 | 配置 | 生效 `/app/data/config.yaml`；回退 `/opt/sub2api/config.yaml` |
-| 回滚点 | `/opt/sub2api/releases/ui-memory-20261107-polish/sub2api` |
+| 回滚点 | `/opt/sub2api/releases/ui-public-20261107-1528/sub2api`（`v0.2.19-ui-memory`） |
+
+本次发布已核对 187 个静态资源、公开版本与账号记忆状态接口；配置字节、迁移数和业务记录数与发布前一致。Respire 同步与用户1 Runtime 的进程、启动时间和重启计数均未变化。该更新没有新增数据库迁移。
 
 目录约定：
 
