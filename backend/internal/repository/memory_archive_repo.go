@@ -126,15 +126,22 @@ func (r *memoryArchiveRepository) Overview(ctx context.Context, userID int64) (s
 	if err != nil {
 		return service.MemoryArchiveOverview{}, err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var event service.MemoryArchiveActivity
 		if err := rows.Scan(&event.EventID, &event.State, &event.CreatedAt, &event.UpdatedAt); err != nil {
+			_ = rows.Close()
 			return service.MemoryArchiveOverview{}, err
 		}
 		result.Recent = append(result.Recent, event)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return service.MemoryArchiveOverview{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return service.MemoryArchiveOverview{}, err
+	}
+	return result, nil
 }
 
 func (r *memoryArchiveRepository) Claim(ctx context.Context, workerID string, limit int, lease time.Duration, maxReconciliationChecks int, userIDs []int64) ([]service.MemoryArchiveEvent, error) {
@@ -297,8 +304,8 @@ func (r *memoryArchiveRepository) Finish(ctx context.Context, event service.Memo
 	default:
 		return errors.New("invalid memory archive final state")
 	}
-	if event.State != service.MemoryArchiveSubmitted && event.State != service.MemoryArchiveNeedsReconciliation &&
-		!(event.State == service.MemoryArchiveProcessing && state == service.MemoryArchiveFailed) {
+	if (event.State != service.MemoryArchiveSubmitted && event.State != service.MemoryArchiveNeedsReconciliation) &&
+		(event.State != service.MemoryArchiveProcessing || state != service.MemoryArchiveFailed) {
 		return errors.New("memory archive was not submitted or awaiting reconciliation")
 	}
 	// Only fixed status codes cross this boundary; raw provider errors can
