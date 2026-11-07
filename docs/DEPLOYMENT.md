@@ -7,21 +7,23 @@
 
 ## 1. 生产现状
 
-2026-11-07 核实：
+2026-11-08（Asia/Shanghai）核实：
 
 | 项 | 值 |
 |---|---|
 | 地址 | `http://103.236.85.237:7788` |
 | 服务 | `sub2api.service`（systemd，独立用户 `sub2api`） |
 | 生效二进制 | `/opt/sub2api/sub2api` → `/opt/sub2api/releases/<label>/sub2api` |
-| 当前 release | `upstream-0.2.20-20261107`，sha256 `1a1963c0…4bbfe3c`；入口 `/assets/index-D-gpDLrb.js` |
-| 来源提交 | `a5ec9fea74655ccb1492e69cd9f1563d1d79b809`（PR #3；上游基线 `6b4b37db4`） |
+| 当前 release | `memory-all-users-20261107`，sha256 `eeb0f8cb957bd185a5a48ce6a36004e8cd9a03f693f076189f4dd29300e93119`；入口 `/assets/index-D-gpDLrb.js` |
+| 来源提交 | `4bc89767b4b1a33b9643a1e264c458f5ffd0ef02`（PR #4；上游基线 `6b4b37db4`） |
 | 页面版本 | `v0.2.20-ui-memory`（版本号不带时间；release 目录保留独立标识） |
 | 依赖 | 同机 PostgreSQL（开机自动执行迁移）+ Redis DB 0 |
 | 配置 | 生效 `/app/data/config.yaml`；回退 `/opt/sub2api/config.yaml` |
-| 回滚点 | `/opt/sub2api/releases/ui-public-20261107-1528/sub2api`（`v0.2.19-ui-memory`） |
+| 回滚点 | `/opt/sub2api/releases/upstream-0.2.20-20261107/sub2api`（`v0.2.20-ui-memory`）及 `/opt/sub2api/backups/memory-all-users-20261107/` 中的生效配置副本 |
 
-本次发布已核对 187 个静态资源、公开版本与账号记忆状态接口；配置字节、迁移数和业务记录数与发布前一致。Respire 同步与用户1 Runtime 的进程、启动时间和重启计数均未变化。该更新没有新增数据库迁移。
+本次发布已核对 187 个静态资源、公开版本及全部 8 个活跃账号的记忆状态（configured/active）。只在生效 YAML 增加 `memory.bindings_file`，回退配置字节不变；301 次迁移、8 个用户、18 个上游账号保持。维护期间用户 8 新增了一把普通 API Key（id 16，2026-11-07 23:51:51 +08:00），总数由 15 到 16，部署未创建密钥。Respire 同步与用户 1 Runtime 的进程、启动时间和重启计数均未变化。该更新没有新增数据库迁移。
+
+用户 2–8 已使用共享编码与独立库，新账号准备 timer 已启用。测量时新增 7 个账号进程及共享编码器合计约 125 MB，原用户 1 的 M3 服务仍约 1.5 GB。真实用户 7 的 HTTP Responses 合成请求完成、队列 completed、来源日记读回与共享语义检索通过；其他账号查询同一事件返回 404，测试日记已 tombstone，队列原文已清除。另一次用户 4 所属分组请求返回上游 503，因此该请求未作为完成归档的证据。没有据此声称已验证回答质量或成本收益。
 
 目录约定：
 
@@ -67,7 +69,7 @@ DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 | 静态资源 | 抽样或全量与 `release-manifest.json` 的 sha256 一致 |
 | 服务 | `ActiveState=active`，`NRestarts` 不增长 |
 | 数据 | 迁移数 / 用户数 / 上游账号数与发布前一致 |
-| 配置 | `config.yaml` 字节不变 |
+| 配置 | 普通发布 `config.yaml` 字节不变；本次账号开通只允许 §8 的 `memory.bindings_file` 增量，并与备份逐项比较 |
 
 ## 4. 回滚
 
@@ -106,7 +108,7 @@ ssh root@103.236.85.237 '
 - 公网仅 HTTP，`7788` 无 TLS；证书签发受线路/备案限制（见 `respire-deploy` 记录）。
 - 单机单实例，无蓝绿或灰度；发布期间有秒级中断。
 - 迁移随进程启动自动执行，回滚前必须确认 schema 兼容。
-- 记忆服务（Respire）同机独立进程：同步服务监听回环 `8787`，用户1专属 Runtime 监听回环 `15170`；不在本发布链路内。
+- 记忆服务（Respire）同机独立进程：同步 `8787`、用户 1 M3 Runtime `15170`，用户 2–8 轻量 Runtime `15171`–`15177`；共享编码 `15168`。均监听回环，服务安装与网关二进制发布分开，详见 §8。
 - lockfile 必须由 pnpm 9 维护；用 pnpm 12 执行任何安装都会重写并丢弃 `overrides`，发布脚本已加断言拦截。
 
 ## 8. 全站账号记忆的配套服务

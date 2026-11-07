@@ -1,6 +1,6 @@
 # Sub2API 服务端 Respire 记忆实施方案
 
-更新：2026-11-07（Asia/Shanghai）。服务端文本 MVP 已完成 unit、PostgreSQL component 和真实生产 Runtime 验收。全站默认开通已获用户授权，新增独立 Runtime 供应和绑定清单热加载；实际已发布范围、版本和回滚点以 [DEPLOYMENT.md](DEPLOYMENT.md) 为准，实现审阅见 [RESPIRE_INTEGRATION_REVIEW.md](RESPIRE_INTEGRATION_REVIEW.md)。
+更新：2026-11-08（Asia/Shanghai）。服务端文本 MVP 已完成 unit、PostgreSQL component 和真实生产 Runtime 验收。全站活跃账号已开通，新增独立轻量 Runtime 供应、共享编码及绑定清单热加载；实际已发布范围、版本和回滚点以 [DEPLOYMENT.md](DEPLOYMENT.md) 为准，实现审阅见 [RESPIRE_INTEGRATION_REVIEW.md](RESPIRE_INTEGRATION_REVIEW.md)。
 
 ## 产品方向
 
