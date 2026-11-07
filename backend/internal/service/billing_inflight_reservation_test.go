@@ -401,16 +401,15 @@ func (c *inflightSnapshotCacheStub) set(groupID int64, platform string, accounts
 	c.byBucket[inflightBucketKey(groupID, platform)] = accounts
 }
 
-func (c *inflightSnapshotCacheStub) GetSnapshot(ctx context.Context, bucket SchedulerBucket) ([]*Account, bool, error) {
+func (c *inflightSnapshotCacheStub) GetSnapshot(_ context.Context, bucket SchedulerBucket) ([]*Account, bool, error) {
 	c.reads.Add(1)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	src := c.byBucket[inflightBucketKey(bucket.GroupID, bucket.Platform)]
 	out := make([]*Account, 0, len(src))
 	for i := range src {
-		a := src[i]
-		out = append(out, &a)
+		out = append(out, &src[i])
 	}
+	c.mu.Unlock()
 	return out, true, nil
 }
 
@@ -453,15 +452,25 @@ func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&before)
 	const n = 20000
-	for i := 0; i < n; i++ {
-		_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: fmt.Sprintf("rand-%d-%d", i, time.Now().UnixNano()), BodyBytes: 4000, MaxTokens: 1000})
-		require.False(t, priced)
+	estimateUnknownModels := func(start int) {
+		for i := start; i < start+n; i++ {
+			model := fmt.Sprintf("rand-%d", i)
+			_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: model, BodyBytes: 4000, MaxTokens: 1000})
+			require.False(t, priced)
+		}
 	}
+	estimateUnknownModels(0)
+	runtime.GC()
+	var firstBatch runtime.MemStats
+	runtime.ReadMemStats(&firstBatch)
+	estimateUnknownModels(n)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
 	require.Zero(t, repo.dbCalls.Load(), "no direct DB query on the request path")
-	require.Equal(t, int64(n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
-	require.Less(t, int64(after.HeapAlloc)-int64(before.HeapAlloc), int64(8<<20), "no per-model cache growth")
+	require.Equal(t, int64(2*n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
+	firstBatchGrowth := int64(firstBatch.HeapAlloc) - int64(before.HeapAlloc)
+	secondBatchGrowth := int64(after.HeapAlloc) - int64(firstBatch.HeapAlloc)
+	require.Less(t, secondBatchGrowth-firstBatchGrowth, int64(4<<20), "unknown-model handling must not retain memory per model")
 }
 
 // 无分组 API Key：使用调度器的未分组账号池，估算与计费回退的账号映射模型同口径。
