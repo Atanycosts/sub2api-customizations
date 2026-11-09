@@ -4,6 +4,7 @@
       <div
         v-if="show"
         class="modal-overlay"
+        :class="{ 'announcement-dialog': variant === 'announcement' }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
         role="dialog"
@@ -17,14 +18,17 @@
             <h3 :id="dialogId" class="modal-title">
               {{ title }}
             </h3>
-            <button
-              v-if="showCloseButton"
-              @click="emit('close')"
-              class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
-              aria-label="Close modal"
-            >
-              <Icon name="x" size="md" />
-            </button>
+            <div class="flex items-center gap-4">
+              <slot name="header-actions"></slot>
+              <button
+                v-if="showCloseButton"
+                @click="emit('close')"
+                class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
+                aria-label="Close modal"
+              >
+                <Icon name="x" size="md" />
+              </button>
+            </div>
           </div>
 
           <!-- Body -->
@@ -69,6 +73,7 @@ interface Props {
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
   zIndex?: number
+  variant?: 'default' | 'announcement'
 }
 
 interface Emits {
@@ -80,7 +85,8 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEscape: true,
   closeOnClickOutside: false,
   showCloseButton: true,
-  zIndex: 50
+  zIndex: 50,
+  variant: 'default'
 })
 
 const emit = defineEmits<Emits>()
@@ -199,3 +205,25 @@ onUnmounted(() => {
   if (wasTopmost) restoreFocus()
 })
 </script>
+
+<style scoped>
+.announcement-dialog .modal-content {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-ink) / .28);
+  border-radius: var(--radius-public);
+  box-shadow: 0 18px 64px rgb(0 0 0 / .12);
+  min-height: 0;
+}
+.announcement-dialog .modal-header,
+.announcement-dialog .modal-footer {
+  border-color: rgb(var(--c-ink) / .13);
+  padding: 18px 24px;
+}
+.announcement-dialog .modal-title { font-size: 15px; font-weight: 500; color: rgb(var(--c-ink)); }
+.announcement-dialog .modal-header button { border-radius: var(--radius-public); }
+.announcement-dialog .modal-body { padding: 0; min-height: 0; }
+@media (max-width: 640px) {
+  .announcement-dialog .modal-header,
+  .announcement-dialog .modal-footer { padding: 14px 20px; }
+}
+</style>

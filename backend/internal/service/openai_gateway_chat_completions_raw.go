@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -95,12 +96,17 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletionsWithStartTime(
 		// anchored to the client's stable conversation prefix.
 		grokCacheIdentity = resolveGrokCacheIdentity(c, body, "", upstreamModel)
 	}
-	if openai.RequiresResponsesForToolCalls(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) {
+	// preserve_inbound 是运营人员对同协议能力的显式声明。部分 OpenAI
+	// 兼容上游已经支持原生 Chat tool calls，即使模型名落入历史上的
+	// Responses-only 规则；此时仍按客户端协议直转，避免重新引入协议转换延迟。
+	preserveInboundTools := account.IsOpenAIApiKey() && openai_compat.ShouldPreserveInboundProtocol(account.Extra)
+	hasTools := len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0
+	if !preserveInboundTools && openai.RequiresResponsesForToolCalls(upstreamModel) && hasTools {
 		err := fmt.Errorf("%s requires Responses for tool calls; this account only supports Chat Completions", normalizeKnownOpenAICodexModel(upstreamModel))
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	if openai.IsGPT6SolOrLunaModelSpelling(upstreamModel) && (len(gjson.GetBytes(body, "tools").Array()) > 0 || len(gjson.GetBytes(body, "functions").Array()) > 0) && gjson.GetBytes(body, "reasoning_effort").String() != "none" {
+	if !preserveInboundTools && openai.IsGPT6SolOrLunaModelSpelling(upstreamModel) && hasTools && gjson.GetBytes(body, "reasoning_effort").String() != "none" {
 		err := fmt.Errorf("%s requires Responses for tool calls with reasoning; this account only supports Chat Completions. Use reasoning_effort=none or a Responses-capable account", upstreamModel)
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
@@ -319,6 +325,11 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	requestContext := context.Background()
+	if c != nil && c.Request != nil {
+		requestContext = c.Request.Context()
+	}
+	ttftMode := s.openAITTFTMode(requestContext)
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
@@ -369,7 +380,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
 				}
-				if firstTokenMs == nil && !usageOnlyChunk {
+				if firstTokenMs == nil && !usageOnlyChunk && openAIStreamDataStartsChatTTFT(payload, ttftMode) {
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}
@@ -495,6 +506,27 @@ func isOpenAIChatUsageOnlyStreamChunk(payload string) bool {
 	}
 	choices := gjson.Get(payload, "choices")
 	return choices.Exists() && choices.IsArray() && len(choices.Array()) == 0
+}
+
+func openAIStreamDataStartsChatTTFT(payload, mode string) bool {
+	if isOpenAIChatUsageOnlyStreamChunk(payload) {
+		return false
+	}
+	if mode != OpenAITTFTModeVisible {
+		return true
+	}
+	for _, choice := range gjson.Get(payload, "choices").Array() {
+		delta := choice.Get("delta")
+		for _, field := range []string{"content", "refusal", "reasoning_content", "reasoning"} {
+			if value := delta.Get(field); value.Exists() && value.String() != "" {
+				return true
+			}
+		}
+		if len(delta.Get("tool_calls").Array()) > 0 || delta.Get("function_call").Exists() {
+			return true
+		}
+	}
+	return false
 }
 
 // extractCCStreamUsage 从单个 CC 流式 chunk 的 payload 中提取 usage 字段。

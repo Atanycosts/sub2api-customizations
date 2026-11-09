@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 )
 
 // resolveUpstreamProtocol 决定 OpenAI 网关本次请求发往上游的协议
@@ -24,9 +25,10 @@ import (
 //  2. adaptive（按入站协议分流）：供应商提供入站协议的原生端点则走同协议，
 //     否则回落 Chat Completions。
 //  3. 显式 anthropic 协议 → Anthropic。
-//  4. shouldForwardOpenAIResponsesViaRawChatCompletions（显式 chat_completions、
+//  4. OpenAI APIKey 显式 preserve_inbound：文本入站协议原样交给同名上游端点。
+//  5. shouldForwardOpenAIResponsesViaRawChatCompletions（显式 chat_completions、
 //     探针确认不支持 Responses 等）→ Chat Completions。
-//  5. 其余 → Responses。
+//  6. 其余 → Responses。
 //
 // Grok 在 Responses / Chat Completions 入口有专属链路，须在调用本函数前分流。
 func resolveUpstreamProtocol(account *Account, inbound, model string, catalog []string) string {
@@ -41,6 +43,10 @@ func resolveUpstreamProtocol(account *Account, inbound, model string, catalog []
 	}
 	if account.IsAnthropicProtocol() {
 		return APIProtocolAnthropic
+	}
+	if account.IsOpenAIApiKey() && openai_compat.ShouldPreserveInboundProtocol(account.Extra) &&
+		(inbound == APIProtocolChatCompletions || inbound == APIProtocolResponses) {
+		return inbound
 	}
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		return APIProtocolChatCompletions

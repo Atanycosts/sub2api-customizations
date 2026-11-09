@@ -1,0 +1,76 @@
+/* Only the announcement reader uses these rules. Payment Markdown is unchanged. */
+.announcement-content {
+  padding: 32px 38px 38px;
+  color: rgb(var(--c-ink));
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.announcement-date {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: rgb(var(--c-ink-muted));
+}
+.announcement-date::before { content: ''; width: 18px; height: 1px; background: rgb(var(--c-primary-600)); }
+.dark .announcement-date::before { background: rgb(var(--c-primary-400)); }
+.announcement-title {
+  margin: 0 0 28px;
+  font-family: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', STSong, SimSun, Georgia, serif;
+  font-size: clamp(30px, 3.5vw, 46px);
+  font-weight: 900;
+  line-height: 1.3;
+  letter-spacing: -.025em;
+  white-space: pre-wrap;
+}
+.announcement-content .announcement-body { color: rgb(var(--c-ink-muted)); font-size: 14px; line-height: 1.9; }
+.announcement-content .announcement-body > :first-child { margin-top: 0; }
+.announcement-content .announcement-body > :last-child { margin-bottom: 0; }
+.announcement-content .announcement-body h1,
+.announcement-content .announcement-body h2,
+.announcement-content .announcement-body h3,
+.announcement-content .announcement-body h4 { margin: 26px 0 12px; padding: 0; border: 0; font-size: 18px; font-weight: 600; line-height: 1.5; color: rgb(var(--c-ink)); }
+.announcement-content .announcement-body h1 { font-size: 24px; }
+.announcement-content .announcement-body h2 { font-size: 21px; }
+.announcement-content .announcement-body h4 { font-size: 16px; }
+.announcement-content .announcement-body p { margin: 0 0 14px; }
+.announcement-content .announcement-body a { color: rgb(var(--c-primary-700)); text-decoration: underline; text-underline-offset: 3px; }
+.dark .announcement-content .announcement-body a { color: rgb(var(--c-primary-400)); }
+.announcement-content .announcement-body a:focus-visible { outline: 2px solid rgb(var(--c-primary-500)); outline-offset: 3px; }
+.announcement-content .announcement-body ul,
+.announcement-content .announcement-body ol { margin: 14px 0; padding-left: 22px; }
+.announcement-content .announcement-body ul { list-style: disc; }
+.announcement-content .announcement-body ol { list-style: decimal; }
+.announcement-content .announcement-body li { padding-left: 3px; margin: 5px 0; }
+.announcement-content .announcement-body blockquote { margin: 18px 0; border-left: 2px solid rgb(var(--c-ink) / .28); padding: 2px 0 2px 16px; background: transparent; font-style: normal; color: inherit; }
+.announcement-content .announcement-body blockquote::before { content: none; }
+.announcement-content .announcement-body blockquote p:last-child { margin-bottom: 0; }
+.announcement-content .announcement-body code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; background: rgb(var(--c-ink) / .05); padding: 2px 5px; border-radius: var(--radius-public); color: rgb(var(--c-ink)); }
+.announcement-content .announcement-body pre { margin: 18px 0; padding: 16px; border: 1px solid rgb(var(--c-ink) / .13); border-radius: var(--radius-public); background: transparent; overflow-x: auto; }
+.announcement-content .announcement-body pre code { padding: 0; background: transparent; white-space: pre; }
+.announcement-content .announcement-body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 18px 0; }
+.announcement-content .announcement-body th,
+.announcement-content .announcement-body td { border: 1px solid rgb(var(--c-ink) / .13); padding: 9px 12px; text-align: left; }
+.announcement-content .announcement-body th { background: rgb(var(--c-ink) / .035); color: rgb(var(--c-ink)); font-weight: 600; }
+.announcement-content .announcement-body p:has(> img),
+.announcement-content .announcement-body p:has(> .announcement-image-link),
+.announcement-content .announcement-body p:has(> .announcement-image-frame) { text-align: center; }
+.announcement-content .announcement-body img { display: block; width: auto; max-width: 100%; height: auto; max-height: min(70vh, 720px); object-fit: contain; margin: 18px auto; border: 0; border-radius: var(--radius-public); box-shadow: none; background: rgb(var(--c-ink) / .035); }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame) { display: block; max-width: 100%; margin: 18px 0; text-decoration: none; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-width="25"] { width: 25%; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-width="50"] { width: 50%; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-width="75"] { width: 75%; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-width="100"] { width: 100%; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-align="left"] { margin-left: 0; margin-right: auto; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-align="center"] { margin-left: auto; margin-right: auto; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame)[data-announcement-align="right"] { margin-left: auto; margin-right: 0; }
+.announcement-content .announcement-body :is(.announcement-image-link, .announcement-image-frame) img { width: 100%; margin: 0; }
+.announcement-content .announcement-body.is-editable :is(.announcement-image-link, .announcement-image-frame) { cursor: pointer; }
+.announcement-content .announcement-body.is-editable :is(.announcement-image-link, .announcement-image-frame):hover img { outline: 2px solid rgb(var(--c-primary-500)); outline-offset: 3px; }
+.announcement-content .announcement-body hr { border: 0; border-top: 1px solid rgb(var(--c-ink) / .13); margin: 24px 0; }
+.announcement-content .announcement-body strong { color: rgb(var(--c-ink)); font-weight: 600; }
+@media (max-width: 640px) {
+  .announcement-content { padding: 28px 22px 32px; }
+  .announcement-title { font-size: 34px; margin-bottom: 24px; }
+}

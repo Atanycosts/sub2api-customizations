@@ -8,7 +8,7 @@ import AnnouncementPopup from '../AnnouncementPopup.vue'
 import { useAnnouncementStore } from '@/stores/announcements'
 
 const announcementMarkdownStyles = readFileSync(
-  resolve(process.cwd(), 'src/styles/announcement-markdown.css'),
+  resolve(process.cwd(), 'src/styles/announcement-content.css'),
   'utf8',
 )
 
@@ -64,7 +64,7 @@ describe('AnnouncementPopup', () => {
     const wrapper = mount(AnnouncementPopup)
     await wrapper.vm.$nextTick()
 
-    const content = document.body.querySelector('.markdown-body')
+    const content = document.body.querySelector('.announcement-body')
     expect(content?.querySelector('h2')?.textContent).toBe('Markdown heading')
     expect(content?.querySelector('h3')?.textContent).toBe('HTML heading')
     expect(content?.querySelector('li')?.textContent).toBe('HTML list item')
@@ -77,7 +77,7 @@ describe('AnnouncementPopup', () => {
   it.each(['h2', 'h3', 'ul', 'li', 'blockquote', 'table', 'th', 'td', 'code'])(
     'loads a shared style rule for mixed-content <%s> elements',
     (element) => {
-      expect(announcementMarkdownStyles).toContain(`.markdown-body ${element}`)
+      expect(announcementMarkdownStyles).toContain(`.announcement-body ${element}`)
     },
   )
 
@@ -92,8 +92,8 @@ describe('AnnouncementPopup', () => {
     })
 
     expect(document.body.textContent).toContain('Preview announcement')
-    expect(document.body.querySelector('.markdown-body h2')?.textContent).toBe('Preview heading')
-    expect(document.body.querySelector('.markdown-body script')).toBeNull()
+    expect(document.body.querySelector('.announcement-body h2')?.textContent).toBe('Preview heading')
+    expect(document.body.querySelector('.announcement-body script')).toBeNull()
     expect(document.body.textContent).toContain('common.close')
 
     const dismissButton = document.body.querySelector<HTMLButtonElement>(
@@ -113,7 +113,7 @@ describe('AnnouncementPopup', () => {
   it('keeps the existing user popup dismissal behavior', async () => {
     const store = useAnnouncementStore()
     store.currentPopup = announcement
-    const dismissPopup = vi.spyOn(store, 'dismissPopup').mockResolvedValue()
+    const dismissPopup = vi.spyOn(store, 'dismissPopup').mockResolvedValue(true)
     const wrapper = mount(AnnouncementPopup)
 
     const dismissButton = document.body.querySelector<HTMLButtonElement>(

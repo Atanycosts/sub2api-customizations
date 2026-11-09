@@ -87,12 +87,16 @@ export default {
 
   // Announcements Page
   announcements: {
+    all: '全部',
+    failedToLoad: '公告加载失败',
+    failedToMarkRead: '标记失败，请重试',
     unreadCount: '公告 · {count}条未读',
     title: '公告',
     description: '查看系统公告',
     unreadOnly: '仅显示未读',
     markRead: '标记已读',
     markAllRead: '全部已读',
+    openImage: '打开原图',
     viewAll: '查看全部公告',
     markedAsRead: '已标记为已读',
     allMarkedAsRead: '所有公告已标记为已读',
