@@ -46,6 +46,22 @@ export async function update(id: number, request: UpdateAnnouncementRequest): Pr
   return data
 }
 
+export interface AnnouncementImageUpload {
+  url: string
+  width: number
+  height: number
+}
+
+export async function uploadImage(file: File, signal?: AbortSignal): Promise<AnnouncementImageUpload> {
+  const form = new FormData()
+  form.append('image', file)
+  const { data } = await apiClient.post<AnnouncementImageUpload>('/admin/announcements/assets', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    signal
+  })
+  return data
+}
+
 export async function deleteAnnouncement(id: number): Promise<{ message: string }> {
   const { data } = await apiClient.delete<{ message: string }>(`/admin/announcements/${id}`)
   return data
@@ -79,6 +95,7 @@ const announcementsAPI = {
   getById,
   create,
   update,
+  uploadImage,
   delete: deleteAnnouncement,
   getReadStatus
 }

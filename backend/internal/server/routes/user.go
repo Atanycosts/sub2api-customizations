@@ -17,6 +17,13 @@ func RegisterUserRoutes(
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
 ) {
+	// Announcement images are embedded by browsers without the panel's Bearer
+	// header. The random filename is the public capability; this endpoint only
+	// serves validated files from the dedicated upload directory.
+	if h.Admin != nil && h.Admin.Announcement != nil {
+		v1.GET("/announcements/assets/:filename", h.Admin.Announcement.ServeImage)
+	}
+
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))

@@ -172,54 +172,87 @@
     <BaseDialog
       :show="showEditDialog"
       :title="isEditing ? t('admin.announcements.editAnnouncement') : t('admin.announcements.createAnnouncement')"
-      width="wide"
+      width="extra-wide"
       @close="closeEdit"
     >
-      <form id="announcement-form" @submit.prevent="handleSave" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.announcements.form.title') }}</label>
-          <input v-model="form.title" type="text" class="input" required />
-        </div>
-
-        <div>
-          <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
-          <textarea v-model="form.content" rows="6" class="input" required></textarea>
-        </div>
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.status') }}</label>
-            <Select v-model="form.status" :options="statusOptions" />
+      <form id="announcement-form" @submit.prevent="handleSave" class="space-y-5">
+        <fieldset :disabled="saving" class="min-w-0 space-y-5">
+          <div class="grid min-w-0 gap-5 lg:grid-cols-2">
+            <div class="min-w-0 space-y-4">
+              <div>
+                <label for="announcement-title" class="input-label">{{ t('admin.announcements.form.title') }}</label>
+                <input id="announcement-title" v-model="form.title" type="text" class="input" required />
+              </div>
+              <div>
+                <label for="announcement-content" class="input-label">{{ t('admin.announcements.form.content') }}</label>
+                <AnnouncementEditor
+                  ref="contentEditor"
+                  v-model="form.content"
+                  :session="editorSession"
+                  :disabled="saving"
+                  @dirty="contentDirty = true"
+                  @uploading="imageUploading = $event"
+                  @upload-failed="imageUploadFailed = $event"
+                />
+              </div>
+            </div>
+            <section class="min-w-0" :aria-label="t('admin.announcements.preview')">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <span class="input-label mb-0">{{ t('admin.announcements.preview') }}</span>
+                <button type="button" class="text-xs text-ink-muted hover:text-primary-600 dark:hover:text-primary-400" :disabled="!form.title.trim() || !form.content.trim()" @click="openDraftPreview">
+                  {{ t('admin.announcements.fullPreview') }}
+                </button>
+              </div>
+              <div class="announcement-draft-preview">
+                <AnnouncementContent
+                  v-if="form.title || form.content"
+                  :announcement="draftPreview"
+                  :image-open-label="t('admin.announcements.form.images.open')"
+                />
+              </div>
+            </section>
           </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.notifyMode') }}</label>
-            <Select v-model="form.notify_mode" :options="notifyModeOptions" />
-            <p class="input-hint">{{ t('admin.announcements.form.notifyModeHint') }}</p>
-          </div>
-        </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
-            <input v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
-            <input v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
-          </div>
-        </div>
+          <details class="border-t border-ink/15 pt-4">
+            <summary class="cursor-pointer text-sm font-medium text-ink">{{ t('admin.announcements.publishing') }}</summary>
+            <div class="mt-4 space-y-4">
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label class="input-label">{{ t('admin.announcements.form.status') }}</label>
+                  <Select v-model="form.status" :options="statusOptions" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.announcements.form.notifyMode') }}</label>
+                  <Select v-model="form.notify_mode" :options="notifyModeOptions" />
+                  <p class="input-hint">{{ t('admin.announcements.form.notifyModeHint') }}</p>
+                </div>
+              </div>
 
-        <AnnouncementTargetingEditor
-          v-model="form.targeting"
-          :groups="subscriptionGroups"
-        />
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
+                  <input v-model="form.starts_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+                  <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
+                  <input v-model="form.ends_at_str" type="datetime-local" max="9999-12-31T23:59" class="input" />
+                  <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
+                </div>
+              </div>
+
+              <AnnouncementTargetingEditor
+                v-model="form.targeting"
+                :groups="subscriptionGroups"
+              />
+            </div>
+          </details>
+        </fieldset>
       </form>
 
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button type="button" @click="closeEdit" class="btn btn-secondary">
+          <button type="button" @click="closeEdit" :disabled="saving" class="btn btn-secondary">
             {{ t('common.cancel') }}
           </button>
           <button type="submit" form="announcement-form" :disabled="saving" class="btn btn-primary">
@@ -249,9 +282,9 @@
     />
 
     <AnnouncementPopup
-      :announcement="previewAnnouncement"
+      :announcement="displayedPreview"
       preview
-      @close="previewAnnouncement = null"
+      @close="previewAnnouncement = null; previewingDraft = false"
     />
   </AppLayout>
 </template>
@@ -278,7 +311,9 @@ import Icon from '@/components/icons/Icon.vue'
 
 import AnnouncementTargetingEditor from '@/components/admin/announcements/AnnouncementTargetingEditor.vue'
 import AnnouncementReadStatusDialog from '@/components/admin/announcements/AnnouncementReadStatusDialog.vue'
+import AnnouncementEditor from '@/components/admin/announcements/AnnouncementEditor.vue'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
+import AnnouncementContent from '@/components/common/AnnouncementContent.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -437,6 +472,29 @@ const form = reactive({
   targeting: { any_of: [] } as AnnouncementTargeting
 })
 
+const contentEditor = ref<{
+  waitForUploads: () => Promise<void>
+  serialize: () => string
+  hasContent: boolean
+  hasFailedUploads: boolean
+} | null>(null)
+const imageUploading = ref(false)
+const imageUploadFailed = ref(false)
+const editorSession = ref(0)
+const contentDirty = ref(false)
+
+const draftPreview = computed(() => ({
+  title: form.title,
+  content: form.content,
+  created_at: editingAnnouncement.value?.created_at,
+}))
+const previewingDraft = ref(false)
+const displayedPreview = computed(() => previewingDraft.value ? draftPreview.value : previewAnnouncement.value)
+
+function openDraftPreview() {
+  previewingDraft.value = true
+}
+
 const subscriptionGroups = ref<AdminGroup[]>([])
 
 async function loadSubscriptionGroups() {
@@ -452,6 +510,7 @@ async function loadSubscriptionGroups() {
 function resetForm() {
   form.title = ''
   form.content = ''
+  contentDirty.value = false
   form.status = 'draft'
   form.notify_mode = 'silent'
   form.starts_at_str = ''
@@ -473,18 +532,26 @@ function fillFormFromAnnouncement(a: Announcement) {
 }
 
 function openCreateDialog() {
+  editorSession.value += 1
+  contentDirty.value = false
+  previewingDraft.value = false
   editingAnnouncement.value = null
   resetForm()
   showEditDialog.value = true
 }
 
 function openEditDialog(row: Announcement) {
+  editorSession.value += 1
+  contentDirty.value = false
+  previewingDraft.value = false
   editingAnnouncement.value = row
   fillFormFromAnnouncement(row)
   showEditDialog.value = true
 }
 
 function closeEdit() {
+  if (saving.value) return
+  editorSession.value += 1
   showEditDialog.value = false
   editingAnnouncement.value = null
 }
@@ -495,7 +562,7 @@ function buildCreatePayload() {
 
   return {
     title: form.title,
-    content: form.content,
+    content: contentEditor.value?.serialize() ?? form.content,
     status: form.status as any,
     notify_mode: form.notify_mode as any,
     targeting: form.targeting,
@@ -508,7 +575,7 @@ function buildUpdatePayload(original: Announcement) {
   const payload: any = {}
 
   if (form.title !== original.title) payload.title = form.title
-  if (form.content !== original.content) payload.content = form.content
+  if (contentDirty.value) payload.content = contentEditor.value?.serialize() ?? form.content
   if (form.status !== original.status) payload.status = form.status
   if (form.notify_mode !== (original.notify_mode || 'silent')) payload.notify_mode = form.notify_mode
 
@@ -535,22 +602,32 @@ function buildUpdatePayload(original: Announcement) {
 }
 
 async function handleSave() {
-  // Frontend validation for targeting (to avoid ANNOUNCEMENT_INVALID_TARGET)
-  const anyOf = form.targeting?.any_of ?? []
-  if (anyOf.length > 50) {
-    appStore.showError(t('admin.announcements.failedToCreate'))
-    return
-  }
-  for (const g of anyOf) {
-    const allOf = g?.all_of ?? []
-    if (allOf.length > 50) {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await contentEditor.value?.waitForUploads()
+    form.content = contentEditor.value?.serialize() ?? form.content
+    if (imageUploadFailed.value || contentEditor.value?.hasFailedUploads) {
+      appStore.showError(t('admin.announcements.form.images.resolveFailures'))
+      return
+    }
+    if (!contentEditor.value?.hasContent) {
+      appStore.showError(t('admin.announcements.form.contentRequired'))
+      return
+    }
+    // Frontend validation for targeting (to avoid ANNOUNCEMENT_INVALID_TARGET)
+    const anyOf = form.targeting?.any_of ?? []
+    if (anyOf.length > 50) {
       appStore.showError(t('admin.announcements.failedToCreate'))
       return
     }
-  }
-
-  saving.value = true
-  try {
+    for (const g of anyOf) {
+      const allOf = g?.all_of ?? []
+      if (allOf.length > 50) {
+        appStore.showError(t('admin.announcements.failedToCreate'))
+        return
+      }
+    }
     if (!editingAnnouncement.value) {
       const payload = buildCreatePayload()
       await adminAPI.announcements.create(payload)
@@ -605,6 +682,7 @@ const readStatusAnnouncementId = ref<number | null>(null)
 const previewAnnouncement = ref<Announcement | null>(null)
 
 function openPreview(row: Announcement) {
+  previewingDraft.value = false
   previewAnnouncement.value = row
 }
 
@@ -623,3 +701,8 @@ onUnmounted(() => {
   currentController?.abort()
 })
 </script>
+
+<style scoped>
+.announcement-draft-preview { min-height: 295px; max-height: 410px; overflow-y: auto; border: 1px solid rgb(var(--c-ink) / .28); border-radius: var(--radius-public); background: rgb(var(--c-surface)); }
+@media (max-width: 640px) { .announcement-draft-preview { min-height: 160px; max-height: 350px; } }
+</style>

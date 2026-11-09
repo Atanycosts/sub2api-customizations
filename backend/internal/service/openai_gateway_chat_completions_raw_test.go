@@ -124,6 +124,98 @@ func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDown
 	require.Contains(t, rec.Body.String(), "data: [DONE]")
 }
 
+func TestForwardAsChatCompletions_PreserveInboundUsesChatCompletionsEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_preserve_chat"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_preserve","object":"chat.completion","model":"gpt-5.4","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+	account := rawChatCompletionsTestAccount()
+	account.Extra = map[string]any{
+		openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModePreserveInbound),
+		openai_compat.ExtraKeyResponsesSupported: false,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "http://upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
+	require.True(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
+	require.Equal(t, "ok", gjson.Get(recorder.Body.String(), "choices.0.message.content").String())
+}
+
+func TestForwardAsChatCompletions_PreserveInboundStreamsNativeChatToolCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-6.1-sol","messages":[{"role":"user","content":"ping"}],"tools":[{"type":"function","function":{"name":"ping","description":"Return a marker","parameters":{"type":"object"}}}],"reasoning_effort":"low","stream":true}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-6.1-sol","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_ping","type":"function","function":{"name":"ping","arguments":"{\"marker\":\"PING_CHAT_TOOLS_20261109\"}"}}]},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl_tool","object":"chat.completion.chunk","model":"gpt-6.1-sol","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":4280,"completion_tokens":25,"total_tokens":4305}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_preserve_chat_tools"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+	account := rawChatCompletionsTestAccount()
+	account.Extra = map[string]any{
+		openai_compat.ExtraKeyResponsesMode: string(openai_compat.ResponsesSupportModePreserveInbound),
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "http://upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "low", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
+	require.Equal(t, "ping", gjson.GetBytes(upstream.lastBody, "tools.0.function.name").String())
+	require.Contains(t, recorder.Body.String(), `"tool_calls"`)
+	require.Contains(t, recorder.Body.String(), `PING_CHAT_TOOLS_20261109`)
+}
+
+func TestForwardAsChatCompletions_ChatOnlyAccountStillRejectsUnsupportedModelTools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"gpt-6.1-sol","messages":[{"role":"user","content":"ping"}],"tools":[{"type":"function","function":{"name":"ping","parameters":{"type":"object"}}}],"reasoning_effort":"low","stream":true}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+	account := rawChatCompletionsTestAccount()
+	account.Extra = map[string]any{openai_compat.ExtraKeyResponsesSupported: false}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "requires Responses for tool calls")
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
 func TestForwardAsChatCompletions_OpenAICompatibleGrokRawMissingUsageFailsBeforeWrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1180,6 +1272,119 @@ func TestIsOpenAIChatUsageOnlyStreamChunk(t *testing.T) {
 	require.False(t, isOpenAIChatUsageOnlyStreamChunk(`{"choices":[{"index":0}],"usage":{"prompt_tokens":1,"completion_tokens":2}}`))
 	require.False(t, isOpenAIChatUsageOnlyStreamChunk(`{"choices":[]}`))
 	require.False(t, isOpenAIChatUsageOnlyStreamChunk(``))
+}
+
+func TestOpenAIStreamDataStartsChatTTFT(t *testing.T) {
+	roleChunk := `{"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`
+	contentChunk := `{"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":null}]}`
+	usageChunk := `{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+
+	require.True(t, openAIStreamDataStartsChatTTFT(roleChunk, OpenAITTFTModeSemantic))
+	require.False(t, openAIStreamDataStartsChatTTFT(roleChunk, OpenAITTFTModeVisible))
+	require.True(t, openAIStreamDataStartsChatTTFT(contentChunk, OpenAITTFTModeVisible))
+	require.False(t, openAIStreamDataStartsChatTTFT(usageChunk, OpenAITTFTModeVisible))
+}
+
+func TestStreamRawChatCompletions_TTFTUsesConfiguredVisibleOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+		openAITTFTMode: OpenAITTFTModeVisible,
+		expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+	})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+			openAITTFTMode: OpenAITTFTModeSemantic,
+			expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+		})
+	})
+
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_ttft","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl_ttft","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":null}]}`,
+		"",
+		`data: {"id":"chatcmpl_ttft","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(&openAIChatFallbackDelayReader{Reader: strings.NewReader(upstreamBody)}),
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+
+	result, err := svc.streamRawChatCompletions(
+		c,
+		resp,
+		rawChatCompletionsTestAccount(),
+		"gpt-5.4",
+		"gpt-5.4",
+		"gpt-5.4",
+		nil,
+		nil,
+		time.Now(),
+		len(`{"model":"gpt-5.4","messages":[]}`),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.FirstTokenMs)
+	require.GreaterOrEqual(t, *result.FirstTokenMs, int(30*time.Millisecond/time.Millisecond))
+	require.Contains(t, recorder.Body.String(), `"content":"ok"`)
+}
+
+func TestHandleChatStreamingResponse_TTFTUsesConfiguredVisibleOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+		openAITTFTMode: OpenAITTFTModeVisible,
+		expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+	})
+	t.Cleanup(func() {
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+			openAITTFTMode: OpenAITTFTModeSemantic,
+			expiresAt:      time.Now().Add(time.Minute).UnixNano(),
+		})
+	})
+
+	upstreamBody := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_ttft"}}`,
+		"",
+		`data: {"type":"response.output_text.delta","delta":"ok"}`,
+		"",
+		`data: {"type":"response.completed","response":{"id":"resp_ttft","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(&openAIChatFallbackDelayReader{Reader: strings.NewReader(upstreamBody)}),
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+
+	result, err := svc.handleChatStreamingResponse(
+		resp,
+		c,
+		rawChatCompletionsTestAccount(),
+		"gpt-5.4",
+		"gpt-5.4",
+		"gpt-5.4",
+		time.Now(),
+		len(`{"model":"gpt-5.4","messages":[]}`),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.FirstTokenMs)
+	require.GreaterOrEqual(t, *result.FirstTokenMs, int(30*time.Millisecond/time.Millisecond))
+	require.Contains(t, recorder.Body.String(), `"content":"ok"`)
 }
 
 func TestEnsureOpenAIChatStreamUsage(t *testing.T) {

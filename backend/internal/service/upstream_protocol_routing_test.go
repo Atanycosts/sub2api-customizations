@@ -49,6 +49,11 @@ func TestResolveUpstreamProtocol(t *testing.T) {
 		}
 		return routingTestAccount(PlatformOpenAI, accountType, nil, extra)
 	}
+	openAIWithMode := func(accountType, mode string) *Account {
+		return routingTestAccount(PlatformOpenAI, accountType, nil, map[string]any{
+			openai_compat.ExtraKeyResponsesMode: mode,
+		})
+	}
 
 	cases := []struct {
 		name    string
@@ -92,6 +97,8 @@ func TestResolveUpstreamProtocol(t *testing.T) {
 		// 无 profile 的账号按探针决定 Responses / CC
 		{"openai apikey unknown probe", openAIWithProbe(AccountTypeAPIKey, nil), cc, "", responses},
 		{"openai apikey probe unsupported", openAIWithProbe(AccountTypeAPIKey, false), anthropic, "", cc},
+		{"openai apikey preserve inbound chat", openAIWithMode(AccountTypeAPIKey, string(openai_compat.ResponsesSupportModePreserveInbound)), cc, "", cc},
+		{"openai apikey preserve inbound responses", openAIWithMode(AccountTypeAPIKey, string(openai_compat.ResponsesSupportModePreserveInbound)), responses, "", responses},
 		{"openai oauth ignores probe", openAIWithProbe(AccountTypeOAuth, false), cc, "", responses},
 	}
 	for _, tc := range cases {

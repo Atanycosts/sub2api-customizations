@@ -89,12 +89,16 @@ export default {
 
   // Announcements Page
   announcements: {
+    all: 'All',
+    failedToLoad: 'Failed to load announcements',
+    failedToMarkRead: 'Failed to mark as read. Please retry.',
     unreadCount: 'Announcements · {count} unread',
     title: 'Announcements',
     description: 'View system announcements',
     unreadOnly: 'Show unread only',
     markRead: 'Mark as read',
     markAllRead: 'Mark all as read',
+    openImage: 'Open original image',
     viewAll: 'View all announcements',
     markedAsRead: 'Marked as read',
     allMarkedAsRead: 'All announcements marked as read',
