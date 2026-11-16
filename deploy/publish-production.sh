@@ -6,6 +6,7 @@
 #   VERSION=0.2.20 ./deploy/publish-production.sh
 #   DRY_RUN=1 ./deploy/publish-production.sh    # 只构建，不连服务器
 #   SKIP_BUILD=1 ./deploy/publish-production.sh # 复用已构建的产物
+#   ARTIFACT_DIR=/path/to/ci-artifact ./deploy/publish-production.sh # 发布 CI 的原始产物
 #
 # 依赖: node, pnpm 9, go 1.27+, python3, ssh/scp（BatchMode 免密）
 set -euo pipefail
@@ -13,13 +14,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="${SERVER:-root@103.236.85.237}"
 PUBLIC_BASE="${PUBLIC_BASE:-http://103.236.85.237:7788}"
-VERSION="${VERSION:-0.2.19-$(date +%Y%m%d-%H%M)}"
+VERSION="${VERSION:-0.2.21-gateway-$(date +%Y%m%d-%H%M)}"
 PNPM_VERSION="${PNPM_VERSION:-9.15.9}"
 LABEL="${LABEL:-$(printf '%s' "$VERSION" | tr '/: ' '---')}"
 OUT="$REPO_ROOT/docs-local/build/sub2api-$LABEL"
 DIST="$REPO_ROOT/backend/internal/web/dist"
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-}"
 
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes)
 
@@ -31,6 +33,29 @@ cd "$REPO_ROOT"
 
 # ---------- 1. 预检 ----------
 log "1/7 预检"
+if [ -n "$ARTIFACT_DIR" ]; then
+  command -v python3 >/dev/null || die "缺少 python3"
+  OUT="$(cd "$ARTIFACT_DIR" && pwd)/sub2api"
+  [ -f "$OUT.manifest.json" ] || die "缺少 CI 产物清单"
+  VERSION="$(python3 - "$OUT" "$OUT.manifest.json" "$(git rev-parse HEAD)" <<'PY'
+import hashlib, json, pathlib, sys
+binary, manifest_path, commit = sys.argv[1:]
+m = json.loads(pathlib.Path(manifest_path).read_text())
+assert m['commit'] == commit, 'CI artifact commit differs from current checkout'
+assert hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest() == m['binary_sha256'], 'CI artifact hash mismatch'
+assert m['version'] and m['entry'] in m['assets'], 'incomplete CI artifact manifest'
+print(m['version'])
+PY
+)"
+  LABEL="${LABEL_OVERRIDE:-$VERSION}"
+  SHA="$(python3 - "$OUT.manifest.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))['binary_sha256'])
+PY
+)"
+  [ -z "$(git status --porcelain)" ] || die "CI 发布要求工作区无未提交改动"
+  log "使用 CI 原始产物 $VERSION / $SHA"
+else
 for bin in node go python3; do command -v "$bin" >/dev/null || die "缺少 $bin"; done
 
 [ -f frontend/pnpm-lock.yaml ] || die "缺少 frontend/pnpm-lock.yaml"
@@ -93,6 +118,7 @@ root = pathlib.Path(dist)
 manifest = {
     'version': version,
     'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+    'source_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()),
     'entry': entry,
     'binary_sha256': hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest(),
     'assets': {'/' + str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -100,11 +126,19 @@ manifest = {
 }
 pathlib.Path(binary + '.manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY
+fi
+
+[[ "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "release 标签仅允许字母、数字、点、横线和下划线"
 
 if [ "$DRY_RUN" = "1" ]; then
   log "DRY_RUN=1，跳过发布"
   exit 0
 fi
+
+# Each release keeps a consistent database snapshot and both effective/fallback
+# configurations. Startup applies embedded migrations after the pointer switch.
+log "发布前备份数据库与配置"
+ssh "${SSH_OPTS[@]}" "$SERVER" python3 - "$LABEL" < "$REPO_ROOT/deploy/backup-production.py"
 
 # ---------- 4. 上传 ----------
 log "5/7 上传到 $SERVER"
@@ -159,7 +193,7 @@ for _ in range(2):
     with urllib.request.urlopen(base + '/home', timeout=8) as response:
         html = response.read().decode()
         assert entry in html, '线上入口与本次构建不同'
-        assert response.headers.get('Cache-Control') == 'no-store', 'HTML 缓存策略不正确'
+        assert 'no-store' in {v.strip().lower() for v in response.headers.get('Cache-Control', '').split(',')}, 'HTML 缓存策略不正确'
         assert response.headers.get('ETag') is None, 'HTML 不应带 ETag'
         nonce = re.search(r"'nonce-([^']+)'", response.headers.get('Content-Security-Policy', ''))
         inline = re.search(r'<script[^>]*nonce="([^"]+)"[^>]*>\s*window\.__APP_CONFIG__', html)

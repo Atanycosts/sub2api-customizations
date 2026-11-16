@@ -2005,6 +2005,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.openai_response_header_timeout",
 		},
 		{
+			name:    "gateway openai upload budget",
+			mutate:  func(c *Config) { c.Gateway.OpenAIRequestBudget.UploadTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_request_budget.upload_timeout_seconds",
+		},
+		{
+			name:    "gateway openai pre-output budget",
+			mutate:  func(c *Config) { c.Gateway.OpenAIRequestBudget.PreOutputTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_request_budget.pre_output_timeout_seconds",
+		},
+		{
 			name:    "gateway gemini same account retries negative",
 			mutate:  func(c *Config) { c.Gateway.MaxSameAccountRetriesGemini = -1 },
 			wantErr: "gateway.max_same_account_retries_gemini",

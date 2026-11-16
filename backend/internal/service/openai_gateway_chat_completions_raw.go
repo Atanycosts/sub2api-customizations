@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -72,7 +73,8 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletionsWithStartTime(
 	body []byte,
 	defaultMappedModel string,
 	startTime time.Time,
-) (*OpenAIForwardResult, error) {
+) (_ *OpenAIForwardResult, timingErr error) {
+	defer func() { finishOpenAITiming(ctx, timingErr) }()
 
 	// 1. Parse minimal fields needed for routing/billing
 	originalModel := gjson.GetBytes(body, "model").String()
@@ -314,7 +316,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	serviceTier *string,
 	startTime time.Time,
 	requestBodyLen int,
-) (*OpenAIForwardResult, error) {
+) (_ *OpenAIForwardResult, timingErr error) {
+	defer func() { finishOpenAITiming(c.Request.Context(), timingErr) }()
+	timing := timingSSEObserver{ctx: c.Request.Context()}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -370,6 +374,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		timing.Line(line)
 		refusalDetector.ObserveSSELine(line)
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
@@ -394,11 +399,13 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if line == "" {
 			if !clientDisconnected && clientOutputStarted {
 				c.Writer.Flush()
+				timing.Flushed()
 			}
 			continue
 		}
 		if !clientDisconnected && clientOutputStarted {
 			c.Writer.Flush()
+			timing.Flushed()
 		}
 	}
 
@@ -422,6 +429,10 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	scanErr := scanner.Err()
+	var budgetErr *OpenAIRequestBudgetError
+	if errors.As(scanErr, &budgetErr) {
+		return resultWithUsage(), budgetErr
+	}
 	if scanErr != nil && !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {
 		logger.L().Warn("openai chat_completions raw: stream read error",
 			zap.Error(scanErr),
@@ -479,6 +490,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			}
 			if !clientDisconnected {
 				c.Writer.Flush()
+				timing.Flushed()
 				clientOutputStarted = true
 			}
 		}
@@ -570,6 +582,8 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveOpenAI(respBody, strings.TrimSpace(gjson.GetBytes(respBody, "type").String()))
+	semantic, text := classifyOpenAITimingPayload(string(respBody), "")
+	requesttiming.Observe(c.Request.Context(), semantic, text)
 
 	var usage OpenAIUsage
 	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(respBody); ok {

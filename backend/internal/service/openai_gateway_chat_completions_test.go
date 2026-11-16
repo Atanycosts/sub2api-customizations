@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -26,6 +27,23 @@ type openAIChatFailingWriter struct {
 	failAfter int
 	writes    int
 }
+
+type budgetCanceledSSEBody struct {
+	ctx     context.Context
+	payload []byte
+	sent    bool
+}
+
+func (b *budgetCanceledSSEBody) Read(p []byte) (int, error) {
+	if !b.sent {
+		b.sent = true
+		return copy(p, b.payload), nil
+	}
+	<-b.ctx.Done()
+	return 0, context.Cause(b.ctx)
+}
+
+func (b *budgetCanceledSSEBody) Close() error { return nil }
 
 func (w *openAIChatFailingWriter) Write(p []byte) (int, error) {
 	if w.writes >= w.failAfter {
@@ -630,6 +648,138 @@ func TestHandleChatStreamingResponse_ClassifiesHTTP2ReadError(t *testing.T) {
 	require.Equal(t, "Upstream HTTP/2 stream failed", message)
 	require.NotContains(t, message, "stream ID")
 	require.NotContains(t, message, "INTERNAL_ERROR")
+}
+
+func TestHandleChatStreamingResponse_ContentProgressSatisfiesPreOutputBudget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	ctx, collector := requesttiming.New(context.Background(), "budget-progress", "/v1/chat/completions")
+	budget := NewOpenAIRequestBudget(0, 100*time.Millisecond)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).
+		WithContext(InstallOpenAIRequestBudget(ctx, budget))
+
+	_, guard := GuardOpenAIRequestBudget(c.Request)
+	require.NotNil(t, guard)
+	t.Cleanup(func() {
+		guard.Close()
+	})
+
+	bodyReader, bodyWriter := io.Pipe()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"x-request-id": []string{"rid-budget-progress"},
+		},
+		Body: bodyReader,
+	}
+	var err error
+	resp, err = guard.Finish(resp, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = resp.Body.Close()
+	})
+
+	started := time.Now()
+	go func() {
+		_, _ = fmt.Fprint(bodyWriter, strings.Join([]string{
+			`data: {"type":"response.created","response":{"id":"resp_budget_progress"}}`,
+			"",
+			`data: {"type":"response.output_text.delta","delta":"meaningful content"}`,
+			"",
+			"",
+		}, "\n"))
+		time.Sleep(200 * time.Millisecond)
+		_, _ = fmt.Fprint(bodyWriter, strings.Join([]string{
+			`data: {"type":"response.completed","response":{"id":"resp_budget_progress","status":"completed","usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}`,
+			"",
+		}, "\n"))
+		_ = bodyWriter.Close()
+	}()
+
+	result, err := (&OpenAIGatewayService{cfg: &config.Config{}}).handleChatStreamingResponse(
+		resp,
+		c,
+		&Account{ID: 1, Name: "budget-progress", Platform: PlatformOpenAI},
+		"gpt-5.4",
+		"gpt-5.4",
+		"gpt-5.4",
+		started,
+		0,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Greater(t, time.Since(started), 100*time.Millisecond, "terminal frame must arrive after the pre-output deadline")
+	require.Contains(t, recorder.Body.String(), `"content":"meaningful content"`)
+	require.NoError(t, guard.Err())
+
+	trace := collector.Finish(http.StatusOK, false)
+	require.NotNil(t, trace.FirstSemanticMS)
+	require.NotNil(t, trace.FirstTextMS)
+	require.NotNil(t, trace.FirstContentFlushMS)
+	require.Less(t, *trace.FirstSemanticMS, 100.0, "meaningful content must release the budget before its deadline")
+	require.Less(t, *trace.FirstContentFlushMS, 100.0, "content must be flushed before its deadline")
+}
+
+func TestHandleChatStreamingResponse_PreservesTypedPreOutputBudgetError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	ctx, collector := requesttiming.New(context.Background(), "budget-expired", "/v1/chat/completions")
+	budget := NewOpenAIRequestBudget(0, 20*time.Millisecond)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).
+		WithContext(InstallOpenAIRequestBudget(ctx, budget))
+
+	guardedReq, guard := GuardOpenAIRequestBudget(c.Request)
+	require.NotNil(t, guard)
+	t.Cleanup(func() {
+		guard.Close()
+	})
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"x-request-id": []string{"rid-budget-expired"},
+		},
+		Body: &budgetCanceledSSEBody{
+			ctx: guardedReq.Context(),
+			payload: []byte(strings.Join([]string{
+				`data: {"type":"response.created","response":{"id":"resp_budget_expired"}}`,
+				"",
+			}, "\n")),
+		},
+	}
+	var err error
+	resp, err = guard.Finish(resp, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = resp.Body.Close()
+	})
+
+	result, err := (&OpenAIGatewayService{cfg: &config.Config{}}).handleChatStreamingResponse(
+		resp,
+		c,
+		&Account{ID: 1, Name: "budget-expired", Platform: PlatformOpenAI},
+		"gpt-5.4",
+		"gpt-5.4",
+		"gpt-5.4",
+		time.Now(),
+		0,
+	)
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	var budgetErr *OpenAIRequestBudgetError
+	require.ErrorAs(t, err, &budgetErr)
+	require.Equal(t, OpenAIRequestBudgetPreOutput, budgetErr.Phase)
+	require.NotContains(t, err.Error(), "missing terminal event")
+	trace := collector.Finish(http.StatusGatewayTimeout, false)
+	require.Nil(t, trace.FirstSemanticMS)
+	require.Nil(t, trace.FirstContentFlushMS)
 }
 
 func TestNormalizeResponsesRequestServiceTier(t *testing.T) {

@@ -86,6 +86,9 @@ func RegisterAdminRoutes(
 
 		// 运维监控（Ops）
 		registerOpsRoutes(admin, h)
+		admin.GET("/request-timings", h.Admin.RequestTiming.List)
+		admin.GET("/request-timings/:trace_id", h.Admin.RequestTiming.Get)
+		h.Admin.GatewayOperations.RegisterRoutes(admin)
 
 		// 系统管理
 		registerSystemRoutes(admin, h)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -48,7 +49,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	return s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, mappedModel, "")
 }
 
-func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (*openaiStreamingResult, error) {
+func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (_ *openaiStreamingResult, timingErr error) {
+	defer func() { finishOpenAITiming(ctx, timingErr) }()
+	timing := timingSSEObserver{ctx: ctx}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -154,6 +157,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 		}
 		flusher.Flush()
+		timing.Flushed()
 		return nil
 	}
 
@@ -421,6 +425,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if scanErr == nil {
 			return nil, nil, false
 		}
+		var budgetErr *OpenAIRequestBudgetError
+		if errors.As(scanErr, &budgetErr) {
+			return resultWithUsage(), budgetErr, true
+		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE token exceeded guarded first-output limit: account=%d limit=%d error=%v", account.ID, openAIFirstOutputStageMaxBytes+openAIFirstOutputScannerFramingAllowance, scanErr)
 			failoverErr := s.newOpenAIStreamFailoverError(
@@ -505,6 +513,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 	}
 	processSSELine := func(line string, queueDrained bool) {
+		timing.Line(line)
 		if streamEarlyErr != nil {
 			return
 		}
@@ -1776,6 +1785,8 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		}
 	}
 
+	semantic, text := classifyOpenAITimingPayload(string(body), "")
+	requesttiming.Observe(ctx, semantic, text)
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}

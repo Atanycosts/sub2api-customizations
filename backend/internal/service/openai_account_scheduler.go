@@ -1436,6 +1436,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
+	admission := openAIAdmissionExclusionSnapshot{}
 	filtered := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	for i := range accounts {
@@ -1447,6 +1448,20 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			}
 		}
 		if !account.IsSchedulable() {
+			if retryAt, ok := openAIAccountTemporary429RetryAt(
+				ctx,
+				account,
+				req.Platform,
+				req.RequestedModel,
+				req.RequireCompact,
+				req.RequiredCapability,
+			); ok &&
+				(!req.RequirePrivacySet || account.IsPrivacySet()) &&
+				s.isAccountTransportCompatible(account, req.RequiredTransport) {
+				if compatible, _ := s.isAccountRequestCompatibleReasonWithRuntime(ctx, account, req, false); compatible {
+					admission.addTemporaryRateLimit(retryAt)
+				}
+			}
 			filterStats.exclude("not_schedulable")
 			continue
 		}
@@ -1481,7 +1496,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
+		return nil, 0, 0, 0, noAvailableOpenAISelectionErrorWithSnapshot(req.RequestedModel, false, filterStats, admission)
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -1771,6 +1786,15 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 // openAISelectionFilterStats so that "no available accounts" errors state why
 // each candidate was dropped instead of failing silently (#4599).
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
+	return s.isAccountRequestCompatibleReasonWithRuntime(ctx, account, req, true)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonWithRuntime(
+	ctx context.Context,
+	account *Account,
+	req OpenAIAccountScheduleRequest,
+	checkRuntime bool,
+) (bool, string) {
 	if account == nil {
 		return false, "account_nil"
 	}
@@ -1782,7 +1806,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if req.RequirePrivacySet && !account.IsPrivacySet() {
 		return false, "privacy_not_set"
 	}
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) {
+	if checkRuntime && s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) {
 		return false, "runtime_blocked"
 	}
 	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantined(ctx, account) {

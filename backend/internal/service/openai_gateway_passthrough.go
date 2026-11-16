@@ -18,6 +18,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -1899,7 +1900,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	startTime time.Time,
 	originalModel string,
 	mappedModel string,
-) (*openaiStreamingResultPassthrough, error) {
+) (_ *openaiStreamingResultPassthrough, timingErr error) {
+	defer func() { finishOpenAITiming(ctx, timingErr) }()
+	timing := timingSSEObserver{ctx: ctx}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -1995,6 +1998,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return
 		}
 		flusher.Flush()
+		timing.Flushed()
 		flushPending = false
 	}
 	defer flushPendingOutput()
@@ -2054,6 +2058,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for documentScanner.Scan() {
 		line := documentScanner.Text()
+		timing.Line(line)
 		if eventType, ok := extractOpenAISSEEventLine(line); ok {
 			pendingSSEEventType = eventType
 			eventType = strings.TrimSpace(eventType)
@@ -2283,6 +2288,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	ensureResponseFailedTerminal()
 	if err := documentScanner.Err(); err != nil {
+		var budgetErr *OpenAIRequestBudgetError
+		if errors.As(err, &budgetErr) {
+			return resultWithUsage(), budgetErr
+		}
 		if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 			s.clearOpenAIProxyStreamDisconnect(account)
 			return resultWithUsage(), nil
@@ -2407,6 +2416,8 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI Responses client tools: %w", err)
 	}
+	semantic, text := classifyOpenAITimingPayload(string(body), "")
+	requesttiming.Observe(ctx, semantic, text)
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}

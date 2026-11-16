@@ -1043,6 +1043,16 @@ type ImageConcurrencyConfig struct {
 	MaxWaitingRequests int `mapstructure:"max_waiting_requests"`
 }
 
+type OpenAIRequestBudgetConfig struct {
+	// UploadTimeoutSeconds bounds upstream request uploads. The deadline is
+	// shared by all attempts in one inbound request; 0 disables it.
+	UploadTimeoutSeconds int `mapstructure:"upload_timeout_seconds"`
+	// PreOutputTimeoutSeconds bounds the wait for the first complete semantic
+	// content event, shared by all attempts. Metadata, role, usage, terminal-only
+	// events and heartbeat bytes do not satisfy it; 0 disables it.
+	PreOutputTimeoutSeconds int `mapstructure:"pre_output_timeout_seconds"`
+}
+
 const (
 	ImageConcurrencyOverflowModeReject = "reject"
 	ImageConcurrencyOverflowModeWait   = "wait"
@@ -1068,6 +1078,8 @@ type GatewayConfig struct {
 	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
 	// 0 表示回退到 OpenAIFirstOutputTimeoutSeconds。
 	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
+	// OpenAIRequestBudget 是请求级共享的上游上传/首语义预算；默认关闭。
+	OpenAIRequestBudget OpenAIRequestBudgetConfig `mapstructure:"openai_request_budget"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// RequestBodyMemoryBudgetBytes bounds buffered ingress allocations per instance; 0 disables it.
@@ -2537,6 +2549,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_request_budget.upload_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_request_budget.pre_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
@@ -3517,6 +3531,12 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 1800 ||
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
+	}
+	if c.Gateway.OpenAIRequestBudget.UploadTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_request_budget.upload_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIRequestBudget.PreOutputTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_request_budget.pre_output_timeout_seconds must be non-negative")
 	}
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {
 		c.Gateway.Live.MaxSessionDurationSeconds = 3600

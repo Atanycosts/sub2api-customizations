@@ -84,6 +84,8 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 
 func provideCleanup(
 	memoryGateway *service.MemoryGateway,
+	requestTiming *service.RequestTimingService,
+	gatewayOperations *service.GatewayOperationsService,
 	entClient *ent.Client,
 	rdb *redis.Client,
 	opsMetricsCollector *service.OpsMetricsCollector,
@@ -329,16 +331,6 @@ func provideCleanup(
 				billingCache.Stop()
 				return nil
 			}},
-			{"UsageRecordWorkerPool", func() error {
-				if usageRecordWorkerPool != nil {
-					usageRecordWorkerPool.Stop()
-				}
-				return nil
-			}},
-			{"UsageBillingLaneCombiner", func() error {
-				usageBillingLanes.Stop()
-				return nil
-			}},
 			{"OAuthService", func() error {
 				oauth.Stop()
 				return nil
@@ -466,6 +458,20 @@ func provideCleanup(
 			}
 		}
 
+		// Usage workers can enqueue a last billing transaction and timing link.
+		// Drain their dependencies in that order before closing SQL/Redis.
+		if gatewayOperations != nil {
+			gatewayOperations.Stop()
+		}
+		if usageRecordWorkerPool != nil {
+			usageRecordWorkerPool.Stop()
+		}
+		if usageBillingLanes != nil {
+			usageBillingLanes.Stop()
+		}
+		if requestTiming != nil {
+			requestTiming.Close()
+		}
 		runParallel(parallelSteps)
 		runSequential(infraSteps)
 

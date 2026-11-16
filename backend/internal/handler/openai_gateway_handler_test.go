@@ -2105,6 +2105,13 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableUngroupedByPlatf
 	return s.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (s *openAIWSFailoverHandlerAccountRepoStub) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]service.Account, error) {
+	if len(platforms) == 0 {
+		return nil, nil
+	}
+	return s.ListSchedulableByPlatform(ctx, platforms[0])
+}
+
 func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {
 	for _, account := range s.accounts {
 		if account.ID == id {

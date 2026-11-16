@@ -281,6 +281,15 @@ gateway:
   openai_first_output_timeout_seconds: 0
   # Optional high/xhigh/max override (seconds, 0=use the standard timeout)
   openai_high_effort_first_output_timeout_seconds: 0
+  # Shared per-request upstream phase budgets. Both default to disabled (0).
+  # Deadlines span all account attempts in one inbound request. Once either
+  # expires, the execution state is unknown: the gateway returns one terminal
+  # 504/SSE failure and does not retry another account or add a retry surcharge.
+  # 请求级共享上游预算，均默认关闭。deadline 跨同一入站请求的全部账号 attempt；
+  # 到期后执行状态未知，只返回一个 504/SSE 终态，不自动换号、不追加重试费用。
+  openai_request_budget:
+    upload_timeout_seconds: 0
+    pre_output_timeout_seconds: 0
   # Max request body size in bytes (default: 256MB)
   # 请求体最大字节数（默认 256MB）
   max_body_size: 268435456

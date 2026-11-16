@@ -472,6 +472,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/request-timings',
+    name: 'AdminRequestTimings',
+    component: () => import('@/views/admin/RequestTimingsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Request Timings', titleKey: 'nav.requestTimings' }
+  },
+  {
+    path: '/admin/gateway-operations',
+    name: 'AdminGatewayOperations',
+    component: () => import('@/views/admin/GatewayOperationsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Gateway Operations', titleKey: 'nav.gatewayOperations' }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),

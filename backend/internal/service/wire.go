@@ -859,8 +859,16 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideGatewayOperationsService(repo GatewayOperationsRepository, encryptor SecretEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
+	s := NewGatewayOperationsService(repo, encryptor, accounts, tests, billing, notifications)
+	s.Start(context.Background())
+	return s
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewRequestTimingService,
+	ProvideGatewayOperationsService,
 	ProvideMemoryGateway,
 	// Core services
 	ProvideAuthService,

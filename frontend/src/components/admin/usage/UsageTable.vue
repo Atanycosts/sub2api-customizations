@@ -261,9 +261,13 @@
 
         <template #cell-request_id="{ row }">
           <div v-if="row.request_id" class="flex max-w-[160px] items-center gap-1.5">
-            <span class="truncate font-mono text-xs text-gray-500 dark:text-gray-400" :title="row.request_id">
+            <RouterLink
+              :to="{ path: '/admin/request-timings', query: { request_id: row.request_id } }"
+              class="truncate font-mono text-xs text-primary-600 hover:underline dark:text-primary-400"
+              :title="t('nav.requestTimings')"
+            >
               {{ row.request_id }}
-            </span>
+            </RouterLink>
             <button
               type="button"
               class="shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-300"
@@ -545,6 +549,7 @@
 </template>
 
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'

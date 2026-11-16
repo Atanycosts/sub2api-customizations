@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	defer h.recoverResponsesPanic(c, &streamStarted)
 
 	requestStart := time.Now()
+	h.installOpenAIRequestBudget(c)
+	timing := requesttiming.FromContext(c.Request.Context())
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -204,6 +207,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			if len(failedAccountIDs) == 0 {
 				cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
 				cls = classifySelectionFailureError(err, cls)
+				applyNoAccountRetryAfter(c, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -294,6 +298,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Timing:             timing,
 					Result:             res,
 					APIKey:             apiKey,
 					User:               apiKey.User,
@@ -320,6 +325,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					).Error("openai_chat_completions.record_usage_failed", zap.Error(err))
 				}
 			})
+		}
+		if h.handleOpenAIRequestBudgetExceeded(c, err, streamStarted, false) {
+			submitChatUsage(result)
+			return
 		}
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {

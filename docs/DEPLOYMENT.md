@@ -7,23 +7,21 @@
 
 ## 1. 生产现状
 
-2026-11-08（Asia/Shanghai）核实：
+2026-11-17（Asia/Shanghai）发布前核实；当前运行版本以服务器符号链接与对应 `release-manifest.json` 为准：
 
 | 项 | 值 |
 |---|---|
 | 地址 | `http://103.236.85.237:7788` |
 | 服务 | `sub2api.service`（systemd，独立用户 `sub2api`） |
 | 生效二进制 | `/opt/sub2api/sub2api` → `/opt/sub2api/releases/<label>/sub2api` |
-| 当前 release | `memory-all-users-20261107`，sha256 `eeb0f8cb957bd185a5a48ce6a36004e8cd9a03f693f076189f4dd29300e93119`；入口 `/assets/index-D-gpDLrb.js` |
-| 来源提交 | `4bc89767b4b1a33b9643a1e264c458f5ffd0ef02`（PR #4；上游基线 `6b4b37db4`） |
-| 页面版本 | `v0.2.20-ui-memory`（版本号不带时间；release 目录保留独立标识） |
+| 发布前 release | `ui-gateway-20261109`，版本 `0.2.20-ui-gateway-20261109` |
+| 发布前来源提交 | `37b37956e2b1f9c98900e12ec7e08b7f51e6f909`（PR #5） |
+| 本次候选 | `release/gateway-lifecycle-20261117`；正常合并官方 `9cd1a1eb21e84707685e1998dcb5a3d1ceafae49`；版本 `0.2.21-gateway-<完整 commit>` |
 | 依赖 | 同机 PostgreSQL（开机自动执行迁移）+ Redis DB 0 |
 | 配置 | 生效 `/app/data/config.yaml`；回退 `/opt/sub2api/config.yaml` |
-| 回滚点 | `/opt/sub2api/releases/upstream-0.2.20-20261107/sub2api`（`v0.2.20-ui-memory`）及 `/opt/sub2api/backups/memory-all-users-20261107/` 中的生效配置副本 |
+| 本次回滚点 | `/opt/sub2api/releases/ui-gateway-20261109/sub2api` 及 `/opt/sub2api/backups/<本次 label>/` 中的数据库、配置和元数据 |
 
-本次发布已核对 187 个静态资源、公开版本及全部 8 个活跃账号的记忆状态（configured/active）。只在生效 YAML 增加 `memory.bindings_file`，回退配置字节不变；301 次迁移、8 个用户、18 个上游账号保持。维护期间用户 8 新增了一把普通 API Key（id 16，2026-11-07 23:51:51 +08:00），总数由 15 到 16，部署未创建密钥。Respire 同步与用户 1 Runtime 的进程、启动时间和重启计数均未变化。该更新没有新增数据库迁移。
-
-用户 2–8 已使用共享编码与独立库，新账号准备 timer 已启用。测量时新增 7 个账号进程及共享编码器合计约 125 MB，原用户 1 的 M3 服务仍约 1.5 GB。真实用户 7 的 HTTP Responses 合成请求完成、队列 completed、来源日记读回与共享语义检索通过；其他账号查询同一事件返回 404，测试日记已 tombstone，队列原文已清除。另一次用户 4 所属分组请求返回上游 503，因此该请求未作为完成归档的证据。没有据此声称已验证回答质量或成本收益。
+本次发布前为 301 次迁移、9 个活跃用户、8 个活跃上游账号；新版本增加 249–253 共 5 个迁移。账号 13/19 的并发均为 100，协议为 `preserve_inbound`；LV（20）保持不可调度。发布不修改这些账号配置。历史记忆服务安装和隔离契约见 §8；每次发布单独保存进程、配置哈希与状态证据，不沿用历史验收作为当前结论。
 
 目录约定：
 
@@ -31,7 +29,7 @@
 /opt/sub2api/
   sub2api              -> releases/<label>/sub2api   （唯一可变指针）
   releases/<label>/    # 每次发布一个目录，不覆盖历史
-  backups/<label>/     # 配置副本与回滚元数据（root only）
+  backups/<label>/     # PostgreSQL custom dump、配置副本与回滚元数据（root only）
   config.yaml          # 回退配置
 /app/data/config.yaml  # 实际生效配置
 ```
@@ -39,22 +37,31 @@
 ## 2. 发布（唯一路径）
 
 ```sh
-./deploy/publish-production.sh                 # 构建 + 发布 + 验收
-VERSION=0.2.20 ./deploy/publish-production.sh  # 指定版本
+# 标准发布：先等待候选 commit 的 CI 与 Security Scan 全部成功，
+# 下载 CI 的 production-linux-amd64-<完整 commit> 制品后：
+ARTIFACT_DIR=/absolute/path/to/artifact ./deploy/publish-production.sh
+
+# 维护用本地构建路径：
 DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 ```
 
-脚本按顺序做七件事，任何一步失败即中止：
+CI `production-artifact` 依赖 shell、后端单元及 PostgreSQL 集成测试、前端、lint 和 release-helpers 全部成功。制品包含嵌入静态资源的 linux/amd64 二进制、完整 commit、二进制及每项静态资源 sha256。Security Scan 是独立 workflow，部署前也必须确认成功。
+
+制品模式要求工作区干净、当前 HEAD 与制品 commit 相同、二进制哈希匹配；不重新构建。脚本还保留本地构建路径，依赖 Go 1.27.4 与 pnpm 9.15.9，lockfile 必须保留安全 `overrides`。
+
+脚本按顺序完成以下步骤，任何一步失败即中止：
 
 1. 预检：node / go / python3 存在；**lockfile 必须含 `overrides` 段**（pnpm 12 会静默丢弃，见 §7）
 2. `pnpm install --frozen-lockfile` + `pnpm run build`（pnpm 非 9.x 时自动切 `corepack pnpm@9.15.9`）
 3. 检查 `backend/internal/web/dist/` 的首页及入口 JS；Vite 直接输出到该目录
 4. `CGO_ENABLED=0 GOOS=linux go build -tags embed -trimpath -ldflags "-X main.Version=<version>"`
-5. 生成包含二进制及静态资源 sha256 的 `release-manifest.json`，上传到 `/tmp`，远端校验后落到新的 `releases/<label>/`（不覆盖已有 release）
+5. 切换前执行 `backup-production.py`：创建 root-only 备份目录，保存 PostgreSQL custom dump、校验 archive list、保存两份配置与上一个二进制路径；再上传到 `/tmp`，远端校验后落到新的 `releases/<label>/`（不覆盖已有 release）
 6. `ln -sfn` + `mv -Tf` 原子切换 `/opt/sub2api/sub2api`，重启服务并等待 active
 7. 公网验收：`/health`、首页入口 JS 与本次清单的名称及 sha256 一致、哈希入口长期缓存、HTML 无缓存、CSP 配置脚本 nonce 一致且每次刷新
 
-脚本不打印任何密钥，不修改 `config.yaml`，不动数据库。
+脚本不打印密钥、不修改配置。新进程启动时会执行嵌入的数据库迁移。正式发布前应把当前生产快照恢复到隔离数据库，以候选制品执行 `-migrate-only` 两次，确认迁移和幂等性；此命令不会启动服务、worker 或模型客户端。存在回滚需求时，旧二进制也应在迁移副本上完成兼容验证。
+
+新进程收到 SIGTERM 后允许 HTTP 请求最多 60 秒完成；随后先停止运维任务、usage worker 与 billing lane，最后用最多 3 秒排空计时写入，再关闭数据库。生产 systemd `TimeoutStopSec=90s`。首次从旧版本升级时，旧进程仍执行它自身的退出逻辑，因此切换前检查正在执行的请求，避免中断长回答。
 
 ## 3. 验收标准
 
@@ -68,8 +75,10 @@ DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 | CSP | 响应头 `nonce-X` 与内联 `__APP_CONFIG__` 的 `nonce` 相同，连续两次请求不同 |
 | 静态资源 | 抽样或全量与 `release-manifest.json` 的 sha256 一致 |
 | 服务 | `ActiveState=active`，`NRestarts` 不增长 |
-| 数据 | 迁移数 / 用户数 / 上游账号数与发布前一致 |
-| 配置 | 普通发布 `config.yaml` 字节不变；本次账号开通只允许 §8 的 `memory.bindings_file` 增量，并与备份逐项比较 |
+| 数据 | 迁移数为发布前加候选新增迁移；用户、上游账号、余额与历史 usage 不因迁移改变；正常流量增量单独核对 |
+| 配置 | 两份 YAML 字节不变；账号 13/19 并发及协议、LV 禁用状态保持 |
+| 新功能 | 管理员接口有鉴权，计时能关联真实 usage；运维 worker 默认关闭、实验预算默认 0；资料页各 tab 无滚动 |
+| 独立服务 | Memory 进程、重启计数与绑定状态保持；禁止把网关重启扩大为记忆服务重启 |
 
 ## 4. 回滚
 
@@ -81,7 +90,9 @@ ssh root@103.236.85.237 '
   curl -fsS http://127.0.0.1:7788/health'
 ```
 
-纯前端/UI 回滚只需切符号链接；**若新版本执行过数据库迁移**，先确认旧二进制兼容当前 schema，再回滚，否则会启动失败。不要用 `cp` 覆盖正在运行的二进制。
+回滚前同样检查并排空正在执行的请求。纯前端/UI 回滚只需切符号链接；**若新版本执行过数据库迁移**，先确认旧二进制兼容当前 schema，再回滚。2026-11-17 的隔离快照已验证原 `ui-gateway-20261109` 在新 schema 上启动以及身份、资料、usage、账号和分组读取成功；这不代替所有写入与计费行为的兼容证明。不要用 `cp` 覆盖正在运行的二进制。
+
+上线后已接收新流量时，禁止为了回滚二进制直接恢复发布前数据库快照，否则会丢失新增 usage、扣费及用户操作。优先使用已验证兼容的旧二进制；若确实需要恢复数据库，必须另行制定停止入口、保存新数据与对账方案。
 
 ## 5. 其他部署形态（不属于本项目维护范围）
 

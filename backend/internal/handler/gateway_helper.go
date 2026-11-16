@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -399,6 +400,10 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 		pingCh = pingTicker.C
 	}
 
+	waitStart := time.Now()
+	defer func() {
+		requesttiming.Admission(ctx, slotType, waitStart, time.Now())
+	}()
 	backoff := initialBackoff
 	timer := time.NewTimer(backoff)
 	defer timer.Stop()

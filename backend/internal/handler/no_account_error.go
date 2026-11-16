@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,6 +33,7 @@ type noAccountErrorClassification struct {
 	Status        int
 	ErrType       string
 	Message       string
+	RetryAfter    int
 	ModelNotFound bool // true when this is a 404 model_not_found classification
 }
 
@@ -59,6 +62,15 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	if fallback.ModelNotFound {
 		return fallback
 	}
+	var rateLimited *service.OpenAIRateLimitedAdmissionError
+	if errors.As(err, &rateLimited) {
+		return noAccountErrorClassification{
+			Status:     http.StatusTooManyRequests,
+			ErrType:    "rate_limit_error",
+			Message:    "All available accounts are currently rate-limited. Please retry later.",
+			RetryAfter: rateLimited.RetryAfterSeconds(time.Now()),
+		}
+	}
 	match := selectionModelRateLimitedPattern.FindStringSubmatch(strings.ToLower(err.Error()))
 	if len(match) != 2 {
 		return fallback
@@ -71,6 +83,12 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 		Status:  http.StatusTooManyRequests,
 		ErrType: "rate_limit_error",
 		Message: "All available accounts are currently rate-limited. Please retry later.",
+	}
+}
+
+func applyNoAccountRetryAfter(c *gin.Context, classification noAccountErrorClassification) {
+	if c != nil && classification.RetryAfter > 0 {
+		c.Header("Retry-After", strconv.Itoa(classification.RetryAfter))
 	}
 }
 

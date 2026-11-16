@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -399,6 +400,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpenAIClientTransportHTTP(c)
 
 	requestStart := time.Now()
+	h.installOpenAIRequestBudget(c)
 
 	// Get apiKey and user from context (set by ApiKeyAuth middleware)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -743,6 +745,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				}
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
 				cls = classifySelectionFailureError(err, cls)
+				applyNoAccountRetryAfter(c, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -868,6 +871,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			timing := requesttiming.FromContext(c.Request.Context())
 			stampOpenAIRequestedReasoningEffort(res, c)
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
@@ -880,6 +884,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Timing:             timing,
 					Result:             res,
 					APIKey:             apiKey,
 					User:               apiKey.User,
@@ -908,6 +913,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					).Error("openai.record_usage_failed", zap.Error(err))
 				}
 			})
+		}
+		if h.handleOpenAIRequestBudgetExceeded(c, err, streamStarted, false) {
+			submitResponsesUsage(result)
+			return
 		}
 		if err != nil {
 			if result != nil && result.ClientDisconnect {
@@ -1207,6 +1216,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	defer h.recoverAnthropicMessagesPanic(c, &streamStarted)
 
 	requestStart := time.Now()
+	h.installOpenAIRequestBudget(c)
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -1384,6 +1394,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			if len(failedAccountIDs) == 0 {
 				if err != nil {
 					cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
+					cls = classifySelectionFailureError(err, cls)
+					applyNoAccountRetryAfter(c, cls)
 					if !cls.ModelNotFound {
 						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					}
@@ -1464,6 +1476,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			timing := requesttiming.FromContext(c.Request.Context())
 			stampOpenAIRequestedReasoningEffort(res, c)
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
@@ -1476,6 +1489,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			channelUsageFields := clientRequestedUsageFields(c, channelMappingMsg, reqModel, res.UpstreamModel)
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Timing:             timing,
 					Result:             res,
 					APIKey:             apiKey,
 					User:               apiKey.User,
@@ -1503,6 +1517,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					).Error("openai_messages.record_usage_failed", zap.Error(err))
 				}
 			})
+		}
+		if h.handleOpenAIRequestBudgetExceeded(c, err, streamStarted, true) {
+			submitMessagesUsage(result)
+			return
 		}
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {
@@ -2412,6 +2430,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
+		requesttiming.AdmissionComplete(c.Request.Context())
 		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
 	}
 	if selection.WaitPlan == nil {
@@ -2447,6 +2466,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
+		requesttiming.AdmissionComplete(c.Request.Context())
 		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
 	}
 
@@ -2503,6 +2523,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
+	requesttiming.AdmissionComplete(c.Request.Context())
 	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
 }
 
@@ -3269,8 +3290,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				turnBillingAPIKey := turnBillingAPIKeys.forTurn(turn, apiKey)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+				timing := requesttiming.FromContext(c.Request.Context())
 				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+						Timing:             timing,
 						Result:             result,
 						APIKey:             turnBillingAPIKey,
 						User:               apiKey.User,
@@ -3847,6 +3870,57 @@ func (h *OpenAIGatewayHandler) handleForwardRequestBodyMemoryOverload(c *gin.Con
 	}
 	h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "service_unavailable",
 		"Request body buffering capacity is exhausted; retry later", streamStarted)
+	c.Abort()
+	return true
+}
+
+func (h *OpenAIGatewayHandler) installOpenAIRequestBudget(c *gin.Context) {
+	if c == nil || c.Request == nil || h == nil || h.cfg == nil {
+		return
+	}
+	budget := service.NewOpenAIRequestBudget(
+		time.Duration(h.cfg.Gateway.OpenAIRequestBudget.UploadTimeoutSeconds)*time.Second,
+		time.Duration(h.cfg.Gateway.OpenAIRequestBudget.PreOutputTimeoutSeconds)*time.Second,
+	)
+	c.Request = c.Request.WithContext(service.InstallOpenAIRequestBudget(c.Request.Context(), budget))
+}
+
+// handleOpenAIRequestBudgetExceeded turns a shared upload/pre-output deadline
+// into one terminal response. The upstream may already be executing, so this
+// path never authorizes another account attempt or a usage surcharge.
+func (h *OpenAIGatewayHandler) handleOpenAIRequestBudgetExceeded(
+	c *gin.Context,
+	err error,
+	streamStarted bool,
+	anthropicProtocol bool,
+) bool {
+	var budgetErr *service.OpenAIRequestBudgetError
+	if !errors.As(err, &budgetErr) {
+		return false
+	}
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		streamStarted = true
+	}
+	committed := service.IsResponseCommitted(c) || (c.Writer != nil && c.Writer.Written())
+	streamStarted = streamStarted || committed
+	service.SetOpsUpstreamError(c, http.StatusGatewayTimeout, budgetErr.Error(), "")
+	if anthropicProtocol {
+		h.anthropicStreamingAwareError(
+			c,
+			http.StatusGatewayTimeout,
+			"api_error",
+			budgetErr.ClientMessage(),
+			streamStarted,
+		)
+	} else {
+		h.handleStreamingAwareError(
+			c,
+			http.StatusGatewayTimeout,
+			"upstream_error",
+			budgetErr.ClientMessage(),
+			streamStarted,
+		)
+	}
 	c.Abort()
 	return true
 }

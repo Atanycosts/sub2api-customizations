@@ -245,6 +245,35 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 	return accounts, useMixed, nil
 }
 
+// ListOpenAIAdmissionAccounts returns the configured OpenAI candidate pool while
+// preserving an active account-level rate-limit deadline for admission
+// classification. Other transient blocks remain excluded here so callers do not
+// relabel overload, manual pauses, expiry, or quota exhaustion as a 429.
+func (s *SchedulerSnapshotService) ListOpenAIAdmissionAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
+	platform = NormalizeOpenAICompatiblePlatform(platform)
+	bucket := s.bucketFor(groupID, platform, s.resolveMode(platform, false))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil {
+		cached, hit, err := s.readOpenAIAdmissionAccounts(ctx, bucket)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if err != nil {
+			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] OpenAI admission cache read failed: bucket=%s err=%v", bucket.String(), err)
+		} else if hit {
+			return cached, nil
+		}
+	}
+
+	now := time.Now()
+	return s.loadFallbackAccountsMatching(ctx, bucket, false, func(account Account) bool {
+		return isOpenAIAdmissionCandidate(account, now)
+	})
+}
+
 // readSnapshotAccounts 读取 bucket 快照，只返回当前可调度的账号；缓存实现能直接返回值切片时直接使用该切片。
 // 快照缓存的是配置的账号池，限流、过载、临时不可调度等限时封禁在每次读取时判定，到期无需写入或 outbox 事件。
 func (s *SchedulerSnapshotService) readSnapshotAccounts(ctx context.Context, bucket SchedulerBucket) ([]Account, bool, error) {
@@ -263,10 +292,37 @@ func (s *SchedulerSnapshotService) readSnapshotAccounts(ctx context.Context, buc
 	return derefSchedulableAccounts(cached), true, nil
 }
 
+func (s *SchedulerSnapshotService) readOpenAIAdmissionAccounts(ctx context.Context, bucket SchedulerBucket) ([]Account, bool, error) {
+	now := time.Now()
+	if reader, ok := s.cache.(schedulerSnapshotValuesReader); ok {
+		accounts, hit, err := reader.GetSnapshotValues(ctx, bucket)
+		if err != nil || !hit {
+			return nil, false, err
+		}
+		return compactOpenAIAdmissionAccounts(accounts, now), true, nil
+	}
+	cached, hit, err := s.cache.GetSnapshot(ctx, bucket)
+	if err != nil || !hit {
+		return nil, false, err
+	}
+	return derefOpenAIAdmissionAccounts(cached, now), true, nil
+}
+
 // loadFallbackAccounts 回源数据库读取 bucket 的账号，取得发布令牌时尽力回写快照。
 // 同一 bucket 的并发回源合并为一次：合并回源与回写不随单个调用方取消，各调用方按自身 ctx 等待结果，
 // 并各自得到一份只含当前可调度账号的独占切片；账号的 map、切片底层数组与指针指向的值在调用方之间共享，不得原地修改。
 func (s *SchedulerSnapshotService) loadFallbackAccounts(ctx context.Context, bucket SchedulerBucket, useMixed bool) ([]Account, error) {
+	return s.loadFallbackAccountsMatching(ctx, bucket, useMixed, func(account Account) bool {
+		return account.IsSchedulable()
+	})
+}
+
+func (s *SchedulerSnapshotService) loadFallbackAccountsMatching(
+	ctx context.Context,
+	bucket SchedulerBucket,
+	useMixed bool,
+	include func(Account) bool,
+) ([]Account, error) {
 	loadCtx := context.WithoutCancel(ctx)
 	results := s.fallbackLoads.DoChan(bucket.String(), func() (result any, err error) {
 		defer func() {
@@ -288,7 +344,7 @@ func (s *SchedulerSnapshotService) loadFallbackAccounts(ctx context.Context, buc
 		}
 		accounts := make([]Account, 0, len(shared))
 		for i := range shared {
-			if shared[i].IsSchedulable() {
+			if include(shared[i]) {
 				accounts = append(accounts, shared[i])
 			}
 		}
@@ -1732,6 +1788,31 @@ func compactSchedulableAccounts(accounts []Account) []Account {
 	return out
 }
 
+func compactOpenAIAdmissionAccounts(accounts []Account, now time.Time) []Account {
+	out := accounts[:0]
+	for i := range accounts {
+		if isOpenAIAdmissionCandidate(accounts[i], now) {
+			out = append(out, accounts[i])
+		}
+	}
+	clear(accounts[len(out):])
+	return out
+}
+
+func isOpenAIAdmissionCandidate(account Account, now time.Time) bool {
+	if !account.IsActive() || !account.Schedulable {
+		return false
+	}
+	if account.AutoPauseOnExpired && account.ExpiresAt != nil && !now.Before(*account.ExpiresAt) {
+		return false
+	}
+	// Admission keeps the persistently configured pool intact so the selector
+	// can classify every runtime exclusion. Dropping overload, temporary errors,
+	// quota exhaustion, or a 429 here would turn mixed failures into a false
+	// "all otherwise eligible candidates were rate limited" verdict.
+	return true
+}
+
 func derefSchedulableAccounts(accounts []*Account) []Account {
 	if len(accounts) == 0 {
 		return []Account{}
@@ -1739,6 +1820,20 @@ func derefSchedulableAccounts(accounts []*Account) []Account {
 	out := make([]Account, 0, len(accounts))
 	for _, account := range accounts {
 		if account == nil || !account.IsSchedulable() {
+			continue
+		}
+		out = append(out, *account)
+	}
+	return out
+}
+
+func derefOpenAIAdmissionAccounts(accounts []*Account, now time.Time) []Account {
+	if len(accounts) == 0 {
+		return []Account{}
+	}
+	out := make([]Account, 0, len(accounts))
+	for _, account := range accounts {
+		if account == nil || !isOpenAIAdmissionCandidate(*account, now) {
 			continue
 		}
 		out = append(out, *account)
