@@ -60,7 +60,7 @@ func gatewayWalletRead(ctx context.Context, client *http.Client, w *GatewayWalle
 	if err != nil {
 		return nil, errors.New("wallet connection failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("wallet returned HTTP %d", resp.StatusCode)
 	}
@@ -108,7 +108,7 @@ func gatewayWalletBalance(provider string, profile, status map[string]json.RawMe
 	}
 	scale, err := gatewayWalletNumber(status, "quota_per_unit")
 	if err != nil || scale <= 0 {
-		return 0, "", errors.New("New API quota conversion unavailable")
+		return 0, "", errors.New("new API quota conversion unavailable")
 	}
 	var display string
 	_ = json.Unmarshal(status["quota_display_type"], &display)

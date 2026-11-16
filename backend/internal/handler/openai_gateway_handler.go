@@ -1216,7 +1216,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	defer h.recoverAnthropicMessagesPanic(c, &streamStarted)
 
 	requestStart := time.Now()
-	h.installOpenAIRequestBudget(c)
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {

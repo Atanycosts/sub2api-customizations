@@ -32,7 +32,11 @@ func BenchmarkRequestTimingHalfMiB(b *testing.B) {
 				}
 			}
 			b.Run(name, func(b *testing.B) {
-				tr := http.DefaultTransport.(*http.Transport).Clone()
+				defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+				if !ok {
+					b.Fatal("benchmark requires the standard HTTP transport")
+				}
+				tr := defaultTransport.Clone()
 				defer tr.CloseIdleConnections()
 				client := &http.Client{Transport: tr}
 				if enabled {

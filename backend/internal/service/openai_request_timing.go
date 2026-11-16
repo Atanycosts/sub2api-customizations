@@ -61,9 +61,9 @@ func (o *timingSSEObserver) Line(line string) {
 			return
 		}
 		if o.data.Len() > 0 {
-			o.data.WriteByte('\n')
+			_ = o.data.WriteByte('\n')
 		}
-		o.data.WriteString(data)
+		_, _ = o.data.WriteString(data)
 	}
 }
 func (o *timingSSEObserver) Flushed() {

@@ -1044,6 +1044,7 @@ type ImageConcurrencyConfig struct {
 }
 
 type OpenAIRequestBudgetConfig struct {
+	// These budgets cover HTTP Chat/Responses, not Messages or WebSocket turns.
 	// UploadTimeoutSeconds bounds upstream request uploads. The deadline is
 	// shared by all attempts in one inbound request; 0 disables it.
 	UploadTimeoutSeconds int `mapstructure:"upload_timeout_seconds"`

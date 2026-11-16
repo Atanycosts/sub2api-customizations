@@ -14,7 +14,7 @@ import (
 func TestGatewayOperationsBudgetReservationIsAtomic(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &gatewayOperationsRepository{db: db}
 	run := &service.GatewayExperiment{ID: "42d8894f-c026-4dc5-8e0a-10a88af16832", RequestedBy: 7, ReservedUSD: 2}
 	mock.ExpectBegin()
@@ -28,7 +28,7 @@ func TestGatewayOperationsBudgetReservationIsAtomic(t *testing.T) {
 func TestGatewayOperationsDuplicateSubmissionCannotReserveTwice(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &gatewayOperationsRepository{db: db}
 	run := &service.GatewayExperiment{ID: "42d8894f-c026-4dc5-8e0a-10a88af16832", RequestedBy: 7, ReservedUSD: 2}
 	mock.ExpectBegin()
@@ -41,7 +41,7 @@ func TestGatewayOperationsDuplicateSubmissionCannotReserveTwice(t *testing.T) {
 func TestGatewayOperationsExactUsageRequiresKeyOwnership(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &gatewayOperationsRepository{db: db}
 	mock.ExpectQuery("SELECT EXISTS.*api_keys").WithArgs(int64(3), int64(7)).WillReturnRows(sqlmock.NewRows([]string{"own"}).AddRow(false))
 	_, err = repo.CacheUsage(context.Background(), 7, 3, []string{"client:unique"})
@@ -51,7 +51,7 @@ func TestGatewayOperationsExactUsageRequiresKeyOwnership(t *testing.T) {
 func TestGatewayOperationsCrashRetainsUnknownReservation(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	repo := &gatewayOperationsRepository{db: db}
 	run := &service.GatewayExperiment{ID: "42d8894f-c026-4dc5-8e0a-10a88af16832", RequestedBy: 7, ReservedUSD: 2, State: "running"}
 	frozen, err := json.Marshal(run)

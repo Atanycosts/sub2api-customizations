@@ -56,7 +56,7 @@ func (r *gatewayOperationsRepository) Wallets(ctx context.Context, limit, offset
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []service.GatewayWallet{}
 	for rows.Next() {
 		w, e := scanGatewayWallet(rows)
@@ -111,7 +111,7 @@ func (r *gatewayOperationsRepository) CreateExperiment(ctx context.Context, e *s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var budget, used float64
 	if err = tx.QueryRowContext(ctx, `SELECT daily_budget_usd FROM gateway_operations_config WHERE id=1 FOR UPDATE`).Scan(&budget); err != nil {
 		return err
@@ -153,7 +153,7 @@ func (r *gatewayOperationsRepository) Experiments(ctx context.Context, limit, of
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []service.GatewayExperiment{}
 	for rows.Next() {
 		var frozen, result []byte
@@ -193,7 +193,7 @@ func (r *gatewayOperationsRepository) CacheUsage(ctx context.Context, userID, ke
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []service.GatewayCacheUsage{}
 	for rows.Next() {
 		var u service.GatewayCacheUsage

@@ -281,7 +281,8 @@ gateway:
   openai_first_output_timeout_seconds: 0
   # Optional high/xhigh/max override (seconds, 0=use the standard timeout)
   openai_high_effort_first_output_timeout_seconds: 0
-  # Shared per-request upstream phase budgets. Both default to disabled (0).
+  # Shared per-request upstream phase budgets for HTTP Chat/Responses only.
+  # Both default to disabled (0); Messages and WebSocket turns are not covered.
   # Deadlines span all account attempts in one inbound request. Once either
   # expires, the execution state is unknown: the gateway returns one terminal
   # 504/SSE failure and does not retry another account or add a retry surcharge.

@@ -201,7 +201,7 @@ func gatewayExperimentOutput(protocol string, b []byte) string {
 	gjson.GetBytes(b, "output").ForEach(func(_, item gjson.Result) bool {
 		item.Get("content").ForEach(func(_, content gjson.Result) bool {
 			if content.Get("type").String() == "output_text" {
-				out.WriteString(content.Get("text").String())
+				_, _ = out.WriteString(content.Get("text").String())
 			}
 			return true
 		})
