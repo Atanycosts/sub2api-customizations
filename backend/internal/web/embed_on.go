@@ -149,13 +149,25 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Check cache first
 	cached := s.cache.Get()
 	if cached != nil {
-		// 不返回 304：CSP nonce 每请求重新生成，而 304 不带 body，
-		// 浏览器会复用缓存里的旧 HTML（旧 nonce）却采用本次响应头里的新
-		// nonce，导致内联的 window.__APP_CONFIG__ 被 CSP 拦截、配置回退。
-		// HTML 壳一律 no-store，静态资源都是带 hash 的文件名，不受影响。
+		// A matching ETag is only enough for 304 when the response has no
+		// per-request nonce. Otherwise the browser would reuse HTML carrying a
+		// stale nonce that no longer matches the CSP header of this request.
+		if nonce == "" {
+			if match := c.GetHeader("If-None-Match"); match == cached.ETag {
+				applyHTMLNoCacheHeaders(c.Writer.Header())
+				c.Status(http.StatusNotModified)
+				c.Abort()
+				return
+			}
+		}
+
+		// Replace nonce placeholder with actual nonce before serving
 		content := replaceNoncePlaceholder(cached.Content, nonce)
 
-		c.Header("Cache-Control", "no-store")
+		if nonce == "" {
+			c.Header("ETag", cached.ETag)
+		}
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 		c.Abort()
 		return
@@ -168,6 +180,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
@@ -176,6 +189,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		// Fallback: serve without injection
+		applyHTMLNoCacheHeaders(c.Writer.Header())
 		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
@@ -187,7 +201,13 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Replace nonce placeholder with actual nonce before serving
 	content := replaceNoncePlaceholder(rendered, nonce)
 
-	c.Header("Cache-Control", "no-store")
+	cached = s.cache.Get()
+	if cached != nil {
+		if nonce == "" {
+			c.Header("ETag", cached.ETag)
+		}
+	}
+	applyHTMLNoCacheHeaders(c.Writer.Header())
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
 }

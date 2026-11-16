@@ -331,9 +331,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.Contains(t, w2.Body.String(), `nonce="nonce2"`)
 	})
 
-	// HTML 壳不再下发 ETag：CSP nonce 每请求重新生成，
-	// 条件缓存会让旧 body 的 nonce 与新响应头对不上。
-	t.Run("does_not_send_etag", func(t *testing.T) {
+	t.Run("does_not_send_etag_with_nonce", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -351,9 +349,37 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.Empty(t, w.Header().Get("ETag"))
 	})
 
-	// 回归保护：带 If-None-Match 的请求必须仍拿到 200 + 新 nonce，
-	// 而不是 304（那样浏览器会复用旧 nonce 的 body，内联配置脚本被 CSP 拦下）
-	t.Run("serves_full_body_for_conditional_request", func(t *testing.T) {
+	t.Run("returns_304_only_when_no_nonce_is_present", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		// No nonce in context means the cached body has no per-request part.
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		// First request to populate cache and get ETag
+		w1 := httptest.NewRecorder()
+		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+		router.ServeHTTP(w1, req1)
+		etag := w1.Header().Get("ETag")
+		require.NotEmpty(t, etag)
+
+		// Second request with If-None-Match
+		w2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req2.Header.Set("If-None-Match", etag)
+		router.ServeHTTP(w2, req2)
+
+		assert.Equal(t, http.StatusNotModified, w2.Code)
+		assert.Empty(t, w2.Body.String())
+		assertNoStoreHTMLHeaders(t, w2.Header())
+	})
+
+	t.Run("serves_fresh_html_when_cached_nonce_is_stale", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -363,26 +389,34 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		router := gin.New()
 		router.Use(func(c *gin.Context) {
-			c.Set(middleware.CSPNonceKey, "nonce-first")
+			c.Set(middleware.CSPNonceKey, c.GetHeader("X-Test-Nonce"))
 			c.Next()
 		})
 		router.Use(server.Middleware())
 
 		w1 := httptest.NewRecorder()
-		router.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/", nil))
-		require.Equal(t, http.StatusOK, w1.Code)
-		require.Contains(t, w1.Body.String(), "nonce-first")
+		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+		req1.Header.Set("X-Test-Nonce", "first-nonce")
+		router.ServeHTTP(w1, req1)
+		etag := w1.Header().Get("ETag")
+		require.Empty(t, etag)
+		assert.Contains(t, w1.Body.String(), `nonce="first-nonce"`)
 
+		// The document embeds the request nonce, so a matching ETag must not
+		// turn this into a 304 that reuses the previous nonce.
 		w2 := httptest.NewRecorder()
 		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("If-None-Match", `"anything"`)
+		req2.Header.Set("X-Test-Nonce", "second-nonce")
+		req2.Header.Set("If-None-Match", `"old-nonce-etag"`)
 		router.ServeHTTP(w2, req2)
 
 		assert.Equal(t, http.StatusOK, w2.Code)
-		assert.Contains(t, w2.Body.String(), "nonce-first")
+		assert.Contains(t, w2.Body.String(), `nonce="second-nonce"`)
+		assert.NotContains(t, w2.Body.String(), `nonce="first-nonce"`)
+		assertNoStoreHTMLHeaders(t, w2.Header())
 	})
 
-	t.Run("sets_cache_control_header", func(t *testing.T) {
+	t.Run("sets_no_store_cache_headers", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -397,9 +431,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		// HTML 壳一律 no-store：CSP nonce 每请求变化，缓存复用会让
-		// 旧 body 里的 nonce 与新响应头的 nonce 对不上
-		assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+		assertNoStoreHTMLHeaders(t, w.Header())
 	})
 
 	t.Run("fallback_on_settings_error", func(t *testing.T) {
@@ -423,6 +455,78 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		// Should still return 200 with base HTML
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "text/html")
+	})
+}
+
+func assertNoStoreHTMLHeaders(t *testing.T, header http.Header) {
+	t.Helper()
+	assert.Equal(t, "no-cache, no-store, must-revalidate", header.Get("Cache-Control"))
+	assert.Equal(t, "no-cache", header.Get("Pragma"))
+	assert.Equal(t, "0", header.Get("Expires"))
+	assert.Equal(t, "no-store", header.Get("CDN-Cache-Control"))
+	assert.Equal(t, "no-store", header.Get("Surrogate-Control"))
+}
+
+func TestFrontendServer_NoStoreHeadersOnEveryHTMLPath(t *testing.T) {
+	t.Run("cache_hit", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w1 := httptest.NewRecorder()
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Set(middleware.CSPNonceKey, "nonce1")
+		server.serveIndexHTML(c1)
+		require.Equal(t, http.StatusOK, w1.Code)
+
+		w2 := httptest.NewRecorder()
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Set(middleware.CSPNonceKey, "nonce2")
+		server.serveIndexHTML(c2)
+
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assertNoStoreHTMLHeaders(t, w2.Header())
+	})
+
+	t.Run("settings_error_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			err: context.DeadlineExceeded,
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Set(middleware.CSPNonceKey, "nonce123")
+		server.serveIndexHTML(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assertNoStoreHTMLHeaders(t, w.Header())
+	})
+
+	t.Run("settings_marshal_error_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: make(chan struct{}),
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Set(middleware.CSPNonceKey, "nonce123")
+		server.serveIndexHTML(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assertNoStoreHTMLHeaders(t, w.Header())
 	})
 }
 
