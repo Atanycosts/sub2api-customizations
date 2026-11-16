@@ -1974,6 +1974,18 @@ type openAIWSUsageHandlerAccountRepoStub struct {
 	account service.Account
 }
 
+func (s *openAIWSUsageHandlerAccountRepoStub) ListModelAvailabilityCandidates(_ context.Context, _ *int64, platforms []string, _ bool) ([]service.Account, error) {
+	if s.account.Status != service.StatusActive || !s.account.Schedulable {
+		return nil, nil
+	}
+	for _, platform := range platforms {
+		if s.account.Platform == platform {
+			return []service.Account{s.account}, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	if s.account.Platform != platform {
 		return nil, nil
@@ -2105,11 +2117,20 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) ListSchedulableUngroupedByPlatf
 	return s.ListSchedulableByPlatform(ctx, platform)
 }
 
-func (s *openAIWSFailoverHandlerAccountRepoStub) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]service.Account, error) {
-	if len(platforms) == 0 {
-		return nil, nil
+func (s *openAIWSFailoverHandlerAccountRepoStub) ListModelAvailabilityCandidates(_ context.Context, _ *int64, platforms []string, _ bool) ([]service.Account, error) {
+	out := make([]service.Account, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		if account.Status != service.StatusActive || !account.Schedulable {
+			continue
+		}
+		for _, platform := range platforms {
+			if account.Platform == platform {
+				out = append(out, account)
+				break
+			}
+		}
 	}
-	return s.ListSchedulableByPlatform(ctx, platforms[0])
+	return out, nil
 }
 
 func (s *openAIWSFailoverHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {

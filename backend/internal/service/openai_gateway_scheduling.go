@@ -1682,26 +1682,51 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
-	if s.schedulerSnapshot != nil {
-		accounts, err := s.schedulerSnapshot.ListOpenAIAdmissionAccounts(ctx, groupID, platform)
+	var accounts []Account
+	if platform == PlatformOpenAI {
+		if s.schedulerSnapshot != nil {
+			var err error
+			accounts, err = s.schedulerSnapshot.ListOpenAIAdmissionAccounts(ctx, groupID, platform)
+			if err != nil {
+				return accounts, err
+			}
+		} else {
+			includeGrouped := s.cfg != nil && s.cfg.RunMode == config.RunModeSimple
+			if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+				groupID = nil
+			}
+			var err error
+			accounts, err = s.accountRepo.ListModelAvailabilityCandidates(ctx, groupID, []string{platform}, includeGrouped)
+			if err != nil {
+				return nil, fmt.Errorf("query accounts failed: %w", err)
+			}
+			accounts = compactOpenAIAdmissionAccounts(accounts, time.Now())
+		}
+	} else if s.schedulerSnapshot != nil {
+		var err error
+		accounts, _, err = s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
 		if err != nil {
 			return accounts, err
 		}
-		accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
-		if platform == PlatformGrok {
-			accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
+	} else if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		var err error
+		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
-		return accounts, nil
+	} else if groupID != nil {
+		var err error
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
+	} else {
+		var err error
+		accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatform(ctx, platform)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
 	}
-	includeGrouped := s.cfg != nil && s.cfg.RunMode == config.RunModeSimple
-	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		groupID = nil
-	}
-	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, groupID, []string{platform}, includeGrouped)
-	if err != nil {
-		return nil, fmt.Errorf("query accounts failed: %w", err)
-	}
-	accounts = compactOpenAIAdmissionAccounts(accounts, time.Now())
 	accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
 	if platform == PlatformGrok {
 		accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)

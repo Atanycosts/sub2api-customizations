@@ -49,7 +49,10 @@ func (r schedulerTestOpenAIAccountRepo) ListSchedulableByGroupID(ctx context.Con
 }
 
 func (r schedulerTestOpenAIAccountRepo) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, _ []string, _ bool) ([]Account, error) {
-	return r.ListSchedulableByGroupID(ctx, *groupID)
+	if groupID != nil {
+		return r.ListSchedulableByGroupID(ctx, *groupID)
+	}
+	return append([]Account(nil), r.accounts...), nil
 }
 
 func (r schedulerTestOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
@@ -68,6 +71,20 @@ func (r schedulerTestOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx c
 
 type schedulerGroupAwareOpenAIAccountRepo struct {
 	schedulerTestOpenAIAccountRepo
+}
+
+func (r schedulerGroupAwareOpenAIAccountRepo) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, _ bool) ([]Account, error) {
+	platformSet := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		platformSet[platform] = struct{}{}
+	}
+	var result []Account
+	for _, acc := range r.accounts {
+		if _, ok := platformSet[acc.Platform]; ok && openAIStickyAccountMatchesGroup(&acc, groupID) {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
 }
 
 func (r schedulerGroupAwareOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {
