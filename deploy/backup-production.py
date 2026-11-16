@@ -49,6 +49,7 @@ def main():
     metadata = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "previous_binary": str(Path("/opt/sub2api/sub2api").resolve()),
+        "previous_resources": str(Path("/opt/sub2api/resources").resolve()) if Path("/opt/sub2api/resources").exists() else None,
         "database_bytes": dump.stat().st_size,
         "database_sha256": hashlib.sha256(dump.read_bytes()).hexdigest(),
         "config_sha256": files,

@@ -27,7 +27,8 @@
 
 ```
 /opt/sub2api/
-  sub2api              -> releases/<label>/sub2api   （唯一可变指针）
+  sub2api              -> releases/<label>/sub2api   （服务二进制指针）
+  resources            -> releases/<label>/resources # 与二进制同提交的运行数据
   releases/<label>/    # 每次发布一个目录，不覆盖历史
   backups/<label>/     # PostgreSQL custom dump、配置副本与回滚元数据（root only）
   config.yaml          # 回退配置
@@ -45,7 +46,7 @@ ARTIFACT_DIR=/absolute/path/to/artifact ./deploy/publish-production.sh
 DRY_RUN=1 ./deploy/publish-production.sh       # 只构建，不连服务器
 ```
 
-CI `production-artifact` 依赖 shell、后端单元及 PostgreSQL 集成测试、前端、lint 和 release-helpers 全部成功。制品包含嵌入静态资源的 linux/amd64 二进制、完整 commit、二进制及每项静态资源 sha256。Security Scan 是独立 workflow，部署前也必须确认成功。
+CI `production-artifact` 依赖 shell、后端单元及 PostgreSQL 集成测试、前端、lint 和 release-helpers 全部成功。制品包含嵌入静态资源的 linux/amd64 二进制、`resources/` 运行数据、完整 commit、二进制及每项静态资源和运行数据 sha256。Security Scan 是独立 workflow，部署前也必须确认成功。
 
 制品模式要求工作区干净、当前 HEAD 与制品 commit 相同、二进制哈希匹配；不重新构建。脚本还保留本地构建路径，依赖 Go 1.27.4 与 pnpm 9.15.9，lockfile 必须保留安全 `overrides`。
 
@@ -56,7 +57,7 @@ CI `production-artifact` 依赖 shell、后端单元及 PostgreSQL 集成测试�
 3. 检查 `backend/internal/web/dist/` 的首页及入口 JS；Vite 直接输出到该目录
 4. `CGO_ENABLED=0 GOOS=linux go build -tags embed -trimpath -ldflags "-X main.Version=<version>"`
 5. 切换前执行 `backup-production.py`：创建 root-only 备份目录，保存 PostgreSQL custom dump、校验 archive list、保存两份配置与上一个二进制路径；再上传到 `/tmp`，远端校验后落到新的 `releases/<label>/`（不覆盖已有 release）
-6. `ln -sfn` + `mv -Tf` 原子切换 `/opt/sub2api/sub2api`，重启服务并等待 active
+6. 校验全部运行数据哈希，将 `/opt/sub2api/resources` 指向本次 release；`ln -sfn` + `mv -Tf` 原子切换 `/opt/sub2api/sub2api`，重启服务并等待 active
 7. 公网验收：`/health`、首页入口 JS 与本次清单的名称及 sha256 一致、哈希入口长期缓存、HTML 无缓存、CSP 配置脚本 nonce 一致且每次刷新
 
 脚本不打印密钥、不修改配置。新进程启动时会执行嵌入的数据库迁移。正式发布前应把当前生产快照恢复到隔离数据库，以候选制品执行 `-migrate-only` 两次，确认迁移和幂等性；此命令不会启动服务、worker 或模型客户端。存在回滚需求时，旧二进制也应在迁移副本上完成兼容验证。
@@ -78,12 +79,17 @@ CI `production-artifact` 依赖 shell、后端单元及 PostgreSQL 集成测试�
 | 数据 | 迁移数为发布前加候选新增迁移；用户、上游账号、余额与历史 usage 不因迁移改变；正常流量增量单独核对 |
 | 配置 | 两份 YAML 字节不变；账号 13/19 并发及协议、LV 禁用状态保持 |
 | 新功能 | 管理员接口有鉴权，计时能关联真实 usage；运维 worker 默认关闭、实验预算默认 0；资料页各 tab 无滚动 |
+| 钱包密钥 | 专用密钥保存在 `security_secrets.gateway_operations_encryption_key`，不依赖未配置时会随机生成的 TOTP key；重启后仍可解密同一钱包凭据 |
 | 独立服务 | Memory 进程、重启计数与绑定状态保持；禁止把网关重启扩大为记忆服务重启 |
 
 ## 4. 回滚
 
 ```sh
 ssh root@103.236.85.237 '
+  if [ -d <上一个 release>/resources ]; then
+    ln -sfn <上一个 release>/resources /opt/sub2api/.resources.new &&
+    mv -Tf /opt/sub2api/.resources.new /opt/sub2api/resources
+  fi &&
   ln -sfn <上一个 release>/sub2api /opt/sub2api/.sub2api.new &&
   mv -Tf /opt/sub2api/.sub2api.new /opt/sub2api/sub2api &&
   systemctl restart sub2api &&
@@ -91,6 +97,10 @@ ssh root@103.236.85.237 '
 ```
 
 回滚前同样检查并排空正在执行的请求。纯前端/UI 回滚只需切符号链接；**若新版本执行过数据库迁移**，先确认旧二进制兼容当前 schema，再回滚。2026-11-17 的隔离快照已验证原 `ui-gateway-20261109` 在新 schema 上启动以及身份、资料、usage、账号和分组读取成功；这不代替所有写入与计费行为的兼容证明。不要用 `cp` 覆盖正在运行的二进制。
+
+若上一个 release 含 `resources/`，同时将资源链接切回该目录；备份 `backup.json` 记录发布前资源路径。早期 release 未携带资源时，保留当前已核实的数据目录，避免重新造成 fallback 价格文件缺失。
+
+两个发布链接各自原子替换，资源链接先于二进制更新；它们不是单个原子操作。远端切换或启动失败时，脚本 trap 会恢复此前两个链接并启动前一版本；公网验收失败时保留诊断，由维护者按回滚命令处理。
 
 上线后已接收新流量时，禁止为了回滚二进制直接恢复发布前数据库快照，否则会丢失新增 usage、扣费及用户操作。优先使用已验证兼容的旧二进制；若确实需要恢复数据库，必须另行制定停止入口、保存新数据与对账方案。
 

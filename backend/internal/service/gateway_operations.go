@@ -56,6 +56,11 @@ type GatewayWalletInput struct {
 
 var ErrGatewayExperimentExists = errors.New("experiment submission already exists")
 
+// GatewayOperationsEncryptor uses a persisted wallet key independently of TOTP configuration.
+type GatewayOperationsEncryptor interface {
+	SecretEncryptor
+}
+
 const GatewayPelicanPrompt = "Create a complete self-contained HTML document showing a pelican riding a bicycle in a continuous smooth animation. Use inline SVG/CSS/JavaScript only, with no external resources. Show a clearly recognizable pelican, two rotating bicycle wheels, pedals and legs moving together, and a coherent environment. Return only the HTML document."
 const GatewayPelicanVersion = "pelican-bicycle-v1"
 
@@ -125,7 +130,7 @@ type GatewayOperationsRepository interface {
 
 type GatewayOperationsService struct {
 	repo          GatewayOperationsRepository
-	encryptor     SecretEncryptor
+	encryptor     GatewayOperationsEncryptor
 	accounts      AccountRepository
 	tests         *AccountTestService
 	billing       *BillingService
@@ -136,7 +141,7 @@ type GatewayOperationsService struct {
 	workerDone    chan struct{}
 }
 
-func NewGatewayOperationsService(repo GatewayOperationsRepository, encryptor SecretEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
+func NewGatewayOperationsService(repo GatewayOperationsRepository, encryptor GatewayOperationsEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
 	return &GatewayOperationsService{repo: repo, encryptor: encryptor, accounts: accounts, tests: tests, billing: billing, notifications: notifications, walletClient: gatewayWalletClient()}
 }
 func (s *GatewayOperationsService) Config(ctx context.Context) (GatewayOperationsConfig, error) {

@@ -19,6 +19,7 @@ PNPM_VERSION="${PNPM_VERSION:-9.15.9}"
 LABEL="${LABEL:-$(printf '%s' "$VERSION" | tr '/: ' '---')}"
 OUT="$REPO_ROOT/docs-local/build/sub2api-$LABEL"
 DIST="$REPO_ROOT/backend/internal/web/dist"
+RESOURCES="$REPO_ROOT/backend/resources"
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-}"
@@ -36,6 +37,7 @@ log "1/7 预检"
 if [ -n "$ARTIFACT_DIR" ]; then
   command -v python3 >/dev/null || die "缺少 python3"
   OUT="$(cd "$ARTIFACT_DIR" && pwd)/sub2api"
+  RESOURCES="$(dirname "$OUT")/resources"
   [ -f "$OUT.manifest.json" ] || die "缺少 CI 产物清单"
   VERSION="$(python3 - "$OUT" "$OUT.manifest.json" "$(git rev-parse HEAD)" <<'PY'
 import hashlib, json, pathlib, sys
@@ -44,6 +46,11 @@ m = json.loads(pathlib.Path(manifest_path).read_text())
 assert m['commit'] == commit, 'CI artifact commit differs from current checkout'
 assert hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest() == m['binary_sha256'], 'CI artifact hash mismatch'
 assert m['version'] and m['entry'] in m['assets'], 'incomplete CI artifact manifest'
+resources = pathlib.Path(binary).parent / 'resources'
+assert m['resources'], 'missing runtime resources manifest'
+assert {str(p.relative_to(resources)) for p in resources.rglob('*') if p.is_file()} == set(m['resources']), 'runtime resources differ from manifest'
+for name, expected in m['resources'].items():
+    assert hashlib.sha256((resources / name).read_bytes()).hexdigest() == expected, 'runtime resource hash mismatch'
 print(m['version'])
 PY
 )"
@@ -111,10 +118,11 @@ SHA="$(shasum -a 256 "$OUT" | awk '{print $1}')"
 SIZE="$(stat -f%z "$OUT" 2>/dev/null || stat -c%s "$OUT")"
 log "二进制 $OUT"
 log "sha256 $SHA ($SIZE bytes)"
-python3 - "$OUT" "$DIST" "$ENTRY" "$VERSION" <<'PY'
+python3 - "$OUT" "$DIST" "$ENTRY" "$VERSION" "$RESOURCES" <<'PY'
 import hashlib, json, pathlib, subprocess, sys
-binary, dist, entry, version = sys.argv[1:]
+binary, dist, entry, version, resources = sys.argv[1:]
 root = pathlib.Path(dist)
+resources = pathlib.Path(resources)
 manifest = {
     'version': version,
     'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
@@ -123,6 +131,8 @@ manifest = {
     'binary_sha256': hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest(),
     'assets': {'/' + str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in root.rglob('*') if p.is_file() and p.suffix in {'.js', '.css', '.svg', '.png', '.webp', '.woff2'}},
+    'resources': {str(p.relative_to(resources)): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in resources.rglob('*') if p.is_file()},
 }
 pathlib.Path(binary + '.manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY
@@ -144,10 +154,12 @@ ssh "${SSH_OPTS[@]}" "$SERVER" python3 - "$LABEL" < "$REPO_ROOT/deploy/backup-pr
 log "5/7 上传到 $SERVER"
 scp "${SSH_OPTS[@]}" "$OUT" "$SERVER:/tmp/sub2api-$LABEL"
 scp "${SSH_OPTS[@]}" "$OUT.manifest.json" "$SERVER:/tmp/sub2api-$LABEL.manifest.json"
+scp "${SSH_OPTS[@]}" -r "$RESOURCES" "$SERVER:/tmp/sub2api-$LABEL.resources"
 
 # ---------- 5. 切换 ----------
 log "6/7 安装 release 并原子切换符号链接"
 PREV="$(ssh "${SSH_OPTS[@]}" "$SERVER" 'readlink -f /opt/sub2api/sub2api')"
+PREV_RESOURCES="$(ssh "${SSH_OPTS[@]}" "$SERVER" 'if [ -e /opt/sub2api/resources ]; then readlink -f /opt/sub2api/resources; fi')"
 ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$LABEL" "$SHA" <<'REMOTE'
 set -euo pipefail
 LABEL="$1"; SHA="$2"
@@ -156,8 +168,39 @@ RELEASE="/opt/sub2api/releases/$LABEL"
 install -d -o sub2api -g sub2api -m 755 "$RELEASE"
 install -o sub2api -g sub2api -m 755 "/tmp/sub2api-$LABEL" "$RELEASE/sub2api"
 install -o sub2api -g sub2api -m 644 "/tmp/sub2api-$LABEL.manifest.json" "$RELEASE/release-manifest.json"
+install -d -o sub2api -g sub2api -m 755 "$RELEASE/resources"
+cp -R "/tmp/sub2api-$LABEL.resources/." "$RELEASE/resources/"
+chown -R sub2api:sub2api "$RELEASE/resources"
 ACTUAL="$(sha256sum "$RELEASE/sub2api" | awk '{print $1}')"
 [ "$ACTUAL" = "$SHA" ] || { echo "远端哈希不一致: $ACTUAL"; exit 1; }
+python3 - "$RELEASE" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+manifest = json.loads((root / 'release-manifest.json').read_text())
+resources = root / 'resources'
+assert {str(p.relative_to(resources)) for p in resources.rglob('*') if p.is_file()} == set(manifest['resources']), 'runtime resources differ from manifest'
+for name, expected in manifest['resources'].items():
+    assert hashlib.sha256((root / 'resources' / name).read_bytes()).hexdigest() == expected, name
+PY
+[ ! -e /opt/sub2api/resources ] || [ -L /opt/sub2api/resources ] || { echo "resources 必须不存在或为发布符号链接"; exit 1; }
+PREVIOUS_BINARY="$(readlink -f /opt/sub2api/sub2api)"
+PREVIOUS_RESOURCES=""
+if [ -e /opt/sub2api/resources ]; then PREVIOUS_RESOURCES="$(readlink -f /opt/sub2api/resources)"; fi
+restore_release_on_error() {
+  trap - ERR
+  ln -sfn "$PREVIOUS_BINARY" /opt/sub2api/.sub2api.new
+  mv -Tf /opt/sub2api/.sub2api.new /opt/sub2api/sub2api
+  if [ -n "$PREVIOUS_RESOURCES" ]; then
+    ln -sfn "$PREVIOUS_RESOURCES" /opt/sub2api/.resources.new
+    mv -Tf /opt/sub2api/.resources.new /opt/sub2api/resources
+  else
+    rm -f /opt/sub2api/resources
+  fi
+  systemctl restart sub2api || true
+}
+trap restore_release_on_error ERR
+ln -sfn "$RELEASE/resources" /opt/sub2api/.resources.new
+mv -Tf /opt/sub2api/.resources.new /opt/sub2api/resources
 ln -sfn "$RELEASE/sub2api" /opt/sub2api/.sub2api.new
 mv -Tf /opt/sub2api/.sub2api.new /opt/sub2api/sub2api
 systemctl restart sub2api
@@ -167,7 +210,9 @@ for i in $(seq 1 15); do
 done
 systemctl is-active sub2api
 systemctl show sub2api -p MainPID -p NRestarts --value | paste -sd' ' -
+trap - ERR
 rm -f "/tmp/sub2api-$LABEL" "/tmp/sub2api-$LABEL.manifest.json"
+rm -rf "/tmp/sub2api-$LABEL.resources"
 REMOTE
 
 # ---------- 6. 验收 ----------
@@ -211,5 +256,11 @@ print(json.dumps({'health': 'ok', 'entry': entry, 'entry_sha256': actual,
 PY
 
 log "完成"
-printf '\n  版本    %s\n  release /opt/sub2api/releases/%s\n  sha256  %s\n  回滚    ssh %s "ln -sfn %s /opt/sub2api/.sub2api.new && mv -Tf /opt/sub2api/.sub2api.new /opt/sub2api/sub2api && systemctl restart sub2api"\n\n' \
-  "$VERSION" "$LABEL" "$SHA" "$SERVER" "$PREV"
+ROLLBACK_RESOURCES=""
+if [ -n "$PREV_RESOURCES" ]; then
+  ROLLBACK_RESOURCES="ln -sfn $PREV_RESOURCES /opt/sub2api/.resources.new && mv -Tf /opt/sub2api/.resources.new /opt/sub2api/resources && "
+else
+  log "上一个 release 无资源目录；二进制回滚时保留本次已核实的资源"
+fi
+printf '\n  版本    %s\n  release /opt/sub2api/releases/%s\n  sha256  %s\n  回滚    ssh %s "%sln -sfn %s /opt/sub2api/.sub2api.new && mv -Tf /opt/sub2api/.sub2api.new /opt/sub2api/sub2api && systemctl restart sub2api"\n\n' \
+  "$VERSION" "$LABEL" "$SHA" "$SERVER" "$ROLLBACK_RESOURCES" "$PREV"

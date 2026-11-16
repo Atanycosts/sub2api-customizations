@@ -257,7 +257,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	requestTimingService := service.NewRequestTimingService(requestTimingRepository)
 	requestTimingHandler := admin.NewRequestTimingHandler(requestTimingService)
 	gatewayOperationsRepository := repository.NewGatewayOperationsRepository(db)
-	gatewayOperationsService := service.ProvideGatewayOperationsService(gatewayOperationsRepository, secretEncryptor, accountRepository, accountTestService, billingService, notificationEmailService)
+	gatewayOperationsEncryptor, err := repository.NewGatewayOperationsEncryptor(client)
+	if err != nil {
+		return nil, err
+	}
+	gatewayOperationsService := service.ProvideGatewayOperationsService(gatewayOperationsRepository, gatewayOperationsEncryptor, accountRepository, accountTestService, billingService, notificationEmailService)
 	gatewayOperationsHandler := admin.NewGatewayOperationsHandler(gatewayOperationsService)
 	updateCache := repository.NewUpdateCache(redisClient)
 	gitHubReleaseClient := repository.ProvideGitHubReleaseClient(configConfig)

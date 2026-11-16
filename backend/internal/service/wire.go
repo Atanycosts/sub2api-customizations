@@ -859,7 +859,7 @@ func ProvideAPIKeyService(
 	return svc
 }
 
-func ProvideGatewayOperationsService(repo GatewayOperationsRepository, encryptor SecretEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
+func ProvideGatewayOperationsService(repo GatewayOperationsRepository, encryptor GatewayOperationsEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
 	s := NewGatewayOperationsService(repo, encryptor, accounts, tests, billing, notifications)
 	s.Start(context.Background())
 	return s
