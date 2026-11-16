@@ -24,7 +24,7 @@ func (r *requestTimingRepository) Save(ctx context.Context, t requesttiming.Trac
 	return err
 }
 func (r *requestTimingRepository) LinkUsage(ctx context.Context, l service.RequestTimingLink) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO gateway_request_timing_usage(trace_id,usage_id,usage_request_id,api_key_id) VALUES($1,NULLIF($2,0),$3,$4) ON CONFLICT(trace_id) DO UPDATE SET usage_id=COALESCE(EXCLUDED.usage_id,gateway_request_timing_usage.usage_id),usage_request_id=EXCLUDED.usage_request_id,api_key_id=EXCLUDED.api_key_id`, l.TraceID, l.UsageID, l.RequestID, l.APIKeyID)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO gateway_request_timing_usage(trace_id,usage_id,usage_request_id,api_key_id) VALUES($1,NULLIF($2::bigint,0),$3,$4) ON CONFLICT(trace_id) DO UPDATE SET usage_id=COALESCE(EXCLUDED.usage_id,gateway_request_timing_usage.usage_id),usage_request_id=EXCLUDED.usage_request_id,api_key_id=EXCLUDED.api_key_id`, l.TraceID, l.UsageID, l.RequestID, l.APIKeyID)
 	return err
 }
 
