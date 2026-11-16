@@ -10,11 +10,6 @@
     </div>
     <div :class="props.embedded ? '' : 'px-6 py-6'">
       <form @submit.prevent="handleUpdateProfile" class="space-y-4">
-        <div v-if="props.embedded">
-          <p class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('profile.editProfile') }}
-          </p>
-        </div>
         <div>
           <label for="username" class="input-label">
             {{ t('profile.username') }}
@@ -28,7 +23,8 @@
           />
         </div>
 
-        <div class="flex justify-end pt-4">
+        <slot />
+        <div class="profile-save-actions flex justify-end">
           <button type="submit" :disabled="loading" class="btn btn-primary">
             {{ loading ? t('profile.updating') : t('profile.updateProfile') }}
           </button>
@@ -46,12 +42,15 @@ import { useAppStore } from '@/stores/app'
 import { userAPI } from '@/api'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const props = withDefaults(defineProps<{
-  initialUsername: string
-  embedded?: boolean
-}>(), {
-  embedded: false,
-})
+const props = withDefaults(
+  defineProps<{
+    initialUsername: string
+    embedded?: boolean
+  }>(),
+  {
+    embedded: false
+  }
+)
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -61,10 +60,13 @@ const username = ref(props.initialUsername)
 let savedUsername = props.initialUsername
 const loading = ref(false)
 
-watch(() => props.initialUsername, (val) => {
-  if (username.value === savedUsername) username.value = val
-  savedUsername = val
-})
+watch(
+  () => props.initialUsername,
+  (val) => {
+    if (username.value === savedUsername) username.value = val
+    savedUsername = val
+  }
+)
 
 const handleUpdateProfile = async () => {
   if (!username.value.trim()) {
@@ -78,7 +80,8 @@ const handleUpdateProfile = async () => {
     const updatedUser = await userAPI.updateProfile({
       username: submittedUsername
     })
-    if (username.value === submittedUsername) username.value = updatedUser.username
+    if (username.value === submittedUsername)
+      username.value = updatedUser.username
     savedUsername = updatedUser.username
     authStore.user = updatedUser
     appStore.showSuccess(t('profile.updateSuccess'))

@@ -1,20 +1,25 @@
 <template>
-  <div :class="props.embedded ? 'space-y-4' : 'card'">
+  <component
+    :is="dialog ? BaseDialog : 'div'"
+    :show="show"
+    :title="t('profile.changePassword')"
+    width="narrow"
+    variant="profile"
+    :close-on-escape="!loading"
+    :show-close-button="!loading"
+    :class="dialog ? undefined : props.embedded ? 'space-y-4' : 'card'"
+    @close="emit('close')"
+  >
     <div
-      v-if="!props.embedded"
+      v-if="!props.embedded && !dialog"
       class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
     >
       <h2 class="text-lg font-medium text-gray-900 dark:text-white">
         {{ t('profile.changePassword') }}
       </h2>
     </div>
-    <div :class="props.embedded ? '' : 'px-6 py-6'">
+    <div :class="props.embedded || dialog ? '' : 'px-6 py-6'">
       <form @submit.prevent="handleChangePassword" class="space-y-4">
-        <div v-if="props.embedded">
-          <p class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('profile.changePassword') }}
-          </p>
-        </div>
         <div>
           <label for="old_password" class="input-label">
             {{ t('profile.currentPassword') }}
@@ -60,14 +65,28 @@
           />
         </div>
 
-        <div class="flex justify-end pt-4">
+        <div class="profile-dialog-actions flex justify-end">
+          <button
+            v-if="dialog"
+            type="button"
+            class="btn btn-secondary"
+            :disabled="loading"
+            @click="emit('close')"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <slot name="actions" />
           <button type="submit" :disabled="loading" class="btn btn-primary">
-            {{ loading ? t('profile.changingPassword') : t('profile.changePasswordButton') }}
+            {{
+              loading
+                ? t('profile.changingPassword')
+                : t('profile.changePasswordButton')
+            }}
           </button>
         </div>
       </form>
     </div>
-  </div>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -76,15 +95,24 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { userAPI } from '@/api'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const props = withDefaults(defineProps<{
-  embedded?: boolean
-}>(), {
-  embedded: false,
-})
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    dialog?: boolean
+    show?: boolean
+  }>(),
+  {
+    embedded: false,
+    dialog: false,
+    show: false
+  }
+)
 
+const emit = defineEmits<{ success: []; close: [] }>()
 const loading = ref(false)
 const form = ref({
   old_password: '',
@@ -105,11 +133,17 @@ const handleChangePassword = async () => {
 
   loading.value = true
   try {
-    await userAPI.changePassword(form.value.old_password, form.value.new_password)
+    await userAPI.changePassword(
+      form.value.old_password,
+      form.value.new_password
+    )
     form.value = { old_password: '', new_password: '', confirm_password: '' }
     appStore.showSuccess(t('profile.passwordChangeSuccess'))
+    emit('success')
   } catch (error: unknown) {
-    appStore.showError(extractApiErrorMessage(error, t('profile.passwordChangeFailed')))
+    appStore.showError(
+      extractApiErrorMessage(error, t('profile.passwordChangeFailed'))
+    )
   } finally {
     loading.value = false
   }

@@ -1,7 +1,16 @@
-import { mount } from '@vue/test-utils'
+import { mount as vueMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
 import type { User } from '@/types'
+
+const mount: typeof vueMount = ((component: any, options: any = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      stubs: { ...options.global?.stubs, teleport: true }
+    }
+  })) as typeof vueMount
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
@@ -37,7 +46,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         if (key === 'profile.authBindings.providers.linuxdo') return 'LinuxDo'
         if (key === 'profile.authBindings.providers.dingtalk') return 'DingTalk'
         if (key === 'profile.authBindings.providers.wechat') return 'WeChat'
-        if (key === 'profile.authBindings.providers.oidc') return params?.providerName || 'OIDC'
+        if (key === 'profile.authBindings.providers.oidc')
+          return params?.providerName || 'OIDC'
         if (key === 'profile.authBindings.source.avatar') {
           return `Avatar synced from ${params?.providerName || 'provider'}`
         }
@@ -73,12 +83,18 @@ function createUser(overrides: Partial<User> = {}): User {
 describe('ProfileInfoCard', () => {
   it.each([
     { avatar_source: 'dingtalk', username_source: 'dingtalk' },
-    { profile_sources: { avatar: { provider: 'dingtalk' }, username: { provider: 'dingtalk' } } },
-  ])('shows DingTalk as the synchronized profile source', (sources) => {
+    {
+      profile_sources: {
+        avatar: { provider: 'dingtalk' },
+        username: { provider: 'dingtalk' }
+      }
+    }
+  ])('shows DingTalk as the synchronized profile source', async (sources) => {
     const wrapper = mount(ProfileInfoCard, {
       props: { user: createUser(sources), dingtalkEnabled: true },
-      global: { stubs: { Icon: true } },
+      global: { stubs: { Icon: true } }
     })
+    await wrapper.get('.profile-overview-details').trigger('click')
     expect(wrapper.text()).toContain('Avatar synced from DingTalk')
     expect(wrapper.text()).toContain('Username synced from DingTalk')
     wrapper.unmount()
@@ -99,11 +115,12 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('alice')
     expect(wrapper.text()).toContain('User')
-    expect(wrapper.get('[data-testid="profile-basics-panel"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="profile-overview-hero"]').exists()).toBe(
+      true
+    )
   })
 
-  it('renders third-party source hints from profile sources', () => {
+  it('renders third-party source hints from profile sources', async () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser({
@@ -121,11 +138,12 @@ describe('ProfileInfoCard', () => {
       }
     })
 
+    await wrapper.get('.profile-overview-details').trigger('click')
     expect(wrapper.text()).toContain('Avatar synced from LinuxDo')
     expect(wrapper.text()).toContain('Username synced from LinuxDo')
   })
 
-  it('uses the configured OIDC provider name in source hints', () => {
+  it('uses the configured OIDC provider name in source hints', async () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser({
@@ -142,6 +160,7 @@ describe('ProfileInfoCard', () => {
       }
     })
 
+    await wrapper.get('.profile-overview-details').trigger('click')
     expect(wrapper.text()).toContain('Username synced from ExampleID')
   })
 
@@ -186,7 +205,7 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.text()).not.toContain('legacy-user@wechat-connect.invalid')
   })
 
-  it('renders the approved overview hero and two-column content shell', () => {
+  it('preserves all three account metrics in the compact overview', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {
         user: createUser()
@@ -198,14 +217,17 @@ describe('ProfileInfoCard', () => {
       }
     })
 
-    expect(wrapper.get('[data-testid="profile-overview-hero"]').text()).toContain('alice@example.com')
-    expect(wrapper.get('[data-testid="profile-overview-metric-balance"]').text()).toContain('Account Balance')
-    expect(wrapper.get('[data-testid="profile-overview-metric-concurrency"]').text()).toContain('Concurrency Limit')
-    expect(wrapper.get('[data-testid="profile-overview-metric-member-since"]').text()).toContain('Member Since')
-    expect(wrapper.find('[data-testid="profile-info-summary-grid"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="profile-main-column"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-side-column"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-basics-panel"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
+    expect(
+      wrapper.get('[data-testid="profile-overview-hero"]').text()
+    ).toContain('alice@example.com')
+    expect(
+      wrapper.get('[data-testid="profile-overview-metric-balance"]').text()
+    ).toContain('Account Balance')
+    expect(
+      wrapper.get('[data-testid="profile-overview-metric-concurrency"]').text()
+    ).toContain('Concurrency Limit')
+    expect(
+      wrapper.get('[data-testid="profile-overview-metric-member-since"]').text()
+    ).toContain('Member Since')
   })
 })
