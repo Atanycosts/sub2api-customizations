@@ -76,7 +76,7 @@
         <div class="space-y-1.5">
           <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.promptVersion') }}</span>
           <div class="input flex items-center bg-gray-50 font-mono text-gray-600 dark:bg-dark-900/40 dark:text-dark-200">
-            {{ plan?.model ? dataPromptVersion : 'v1' }}
+            pelican-bicycle-v1
           </div>
           <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.promptFixed') }}</span>
         </div>
@@ -128,7 +128,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const loadingModels = ref(false)
 const modelOptions = ref<{ value: string; label: string }[]>([])
-const dataPromptVersion = ref('v1')
 let modelRequestSequence = 0
 const emptyForm = (): PelicanPlanInput => ({
   group_id: 0,
@@ -187,7 +186,6 @@ async function loadModels() {
       : await adminAPI.groups.getModelAllowlistCandidates(group.id, group.platform)
     if (requestID !== modelRequestSequence) return
     modelOptions.value = models.map((model) => ({ value: model, label: model }))
-    if (form.model && !models.includes(form.model)) form.model = ''
   } finally {
     if (requestID === modelRequestSequence) loadingModels.value = false
   }
