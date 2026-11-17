@@ -25,6 +25,7 @@ func TestPelicanPublicBoundaryRejectsUnauthenticatedAndMalformedReads(t *testing
 		{"invalid group", "/pelican?group_id=private", true, 400},
 		{"invalid effort", "/pelican?effort=turbo", true, 400},
 		{"invalid state", "/pelican?state=deleted", true, 400},
+		{"invalid latest per group", "/pelican?latest_per_group=maybe", true, 400},
 		{"invalid detail", "/pelican/not-a-uuid", true, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,6 +42,26 @@ func TestPelicanPublicBoundaryRejectsUnauthenticatedAndMalformedReads(t *testing
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
 			require.Equal(t, tc.status, w.Code)
 			require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+		})
+	}
+}
+
+func TestPelicanFilterParsesLatestPerGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		query    string
+		expected bool
+	}{
+		{"", false},
+		{"latest_per_group=true", true},
+		{"latest_per_group=false", false},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/pelican?"+tc.query, nil)
+			filter, ok := pelicanFilter(c, false)
+			require.True(t, ok)
+			require.Equal(t, tc.expected, filter.LatestPerGroup)
 		})
 	}
 }

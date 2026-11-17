@@ -59,8 +59,15 @@ func (r *pelicanRepository) SavePlan(ctx context.Context, p *service.PelicanPlan
 	if p.ID == 0 {
 		return r.db.QueryRowContext(ctx, `INSERT INTO pelican_plans(group_id,configuration,enabled,published,interval_minutes,next_run_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`, p.GroupID, b, p.Enabled, p.Published, p.IntervalMinutes, p.NextRunAt).Scan(&p.ID)
 	}
-	res, err := r.db.ExecContext(ctx, `UPDATE pelican_plans SET group_id=$2,configuration=$3,enabled=$4,published=$5,interval_minutes=$6,next_run_at=$7 WHERE id=$1 AND deleted_at IS NULL`, p.ID, p.GroupID, b, p.Enabled, p.Published, p.IntervalMinutes, p.NextRunAt)
-	return pelicanChanged(res, err)
+	err = r.db.QueryRowContext(ctx, `UPDATE pelican_plans SET group_id=$2,configuration=$3,
+		next_run_at=CASE WHEN interval_minutes<>$6 OR (NOT enabled AND $4) THEN $7::timestamptz ELSE next_run_at END,
+		enabled=$4,published=$5,interval_minutes=$6
+		WHERE id=$1 AND deleted_at IS NULL
+		RETURNING last_run_at,next_run_at,running_until`, p.ID, p.GroupID, b, p.Enabled, p.Published, p.IntervalMinutes, p.NextRunAt).Scan(&p.LastRunAt, &p.NextRunAt, &p.RunningUntil)
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ErrPelicanNotFound
+	}
+	return err
 }
 func pelicanChanged(res sql.Result, err error) error {
 	if err != nil {
@@ -192,6 +199,9 @@ func pelicanWhere(f service.PelicanFilter, ids []int64, public bool) (string, []
 }
 func (r *pelicanRepository) Results(ctx context.Context, f service.PelicanFilter, ids []int64, public bool) ([]service.PelicanRun, int, service.PelicanStats, error) {
 	where, args := pelicanWhere(f, ids, public)
+	if f.LatestPerGroup {
+		return r.latestPerGroupResults(ctx, f, where, args)
+	}
 	from := ` FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id WHERE ` + where
 	var total int
 	var stats service.PelicanStats
@@ -200,7 +210,7 @@ func (r *pelicanRepository) Results(ctx context.Context, f service.PelicanFilter
 		return nil, 0, stats, err
 	}
 	args = append(args, f.PageSize, (f.Page-1)*f.PageSize)
-	rows, err := r.db.QueryContext(ctx, `SELECT r.result-'output'-'raw_response'-'usage'-'timing'`+from+fmt.Sprintf(` ORDER BY r.created_at DESC,r.id LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
+	rows, err := r.db.QueryContext(ctx, `SELECT r.result-'output'-'raw_response'-'usage'-'timing'`+from+fmt.Sprintf(` ORDER BY r.created_at DESC,r.id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, 0, stats, err
 	}
@@ -210,6 +220,41 @@ func (r *pelicanRepository) Results(ctx context.Context, f service.PelicanFilter
 		var b []byte
 		var run service.PelicanRun
 		if err = rows.Scan(&b); err != nil {
+			return nil, 0, stats, err
+		}
+		if err = json.Unmarshal(b, &run); err != nil {
+			return nil, 0, stats, err
+		}
+		out = append(out, run)
+	}
+	return out, total, stats, rows.Err()
+}
+func (r *pelicanRepository) latestPerGroupResults(ctx context.Context, f service.PelicanFilter, where string, args []any) ([]service.PelicanRun, int, service.PelicanStats, error) {
+	filtered := `WITH filtered AS (
+		SELECT r.id,r.state,r.created_at,
+			r.result-'output'-'raw_response'-'usage'-'timing' AS result,
+			COUNT(*) OVER(PARTITION BY r.group_id) AS history_count,
+			ROW_NUMBER() OVER(PARTITION BY r.group_id ORDER BY r.created_at DESC,r.id DESC) AS group_rank
+		FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id
+		WHERE ` + where + `
+	)`
+	var total int
+	var stats service.PelicanStats
+	err := r.db.QueryRowContext(ctx, filtered+` SELECT COUNT(*),COUNT(*) FILTER(WHERE state='completed'),COUNT(*) FILTER(WHERE state='failed'),COUNT(*) FILTER(WHERE state='unknown'),COUNT(*) FILTER(WHERE state='running') FROM filtered WHERE group_rank=1`, args...).Scan(&total, &stats.Completed, &stats.Failed, &stats.Unknown, &stats.Running)
+	if err != nil {
+		return nil, 0, stats, err
+	}
+	args = append(args, f.PageSize, (f.Page-1)*f.PageSize)
+	rows, err := r.db.QueryContext(ctx, filtered+fmt.Sprintf(` SELECT result,history_count FROM filtered WHERE group_rank=1 ORDER BY created_at DESC,id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
+	if err != nil {
+		return nil, 0, stats, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []service.PelicanRun{}
+	for rows.Next() {
+		var b []byte
+		var run service.PelicanRun
+		if err = rows.Scan(&b, &run.HistoryCount); err != nil {
 			return nil, 0, stats, err
 		}
 		if err = json.Unmarshal(b, &run); err != nil {

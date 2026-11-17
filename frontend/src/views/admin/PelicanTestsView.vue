@@ -1,265 +1,331 @@
 <template>
-  <AppLayout>
-    <div class="mx-auto max-w-7xl space-y-6 pb-10">
-      <header class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div class="mb-2 inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
-            <Icon name="beaker" size="sm" />
-            {{ t('pelican.admin.badge') }}
-          </div>
-          <h1 class="text-2xl font-black tracking-tight text-gray-950 dark:text-white sm:text-3xl">
+  <AppLayout viewport>
+    <div ref="adminRoot" class="pelican-admin flex h-full min-h-0 w-full flex-col gap-2">
+      <header class="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div class="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 class="text-xl font-bold tracking-tight text-gray-950 dark:text-white">
             {{ t('pelican.admin.title') }}
           </h1>
-          <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500 dark:text-dark-300">
+          <p class="hidden min-w-0 truncate text-xs text-gray-500 dark:text-dark-300 xl:block">
             {{ t('pelican.admin.description') }}
           </p>
         </div>
-        <router-link to="/pelican" class="btn btn-secondary">
-          <Icon name="eye" size="sm" />
-          {{ t('pelican.admin.openUserPage') }}
-        </router-link>
-      </header>
-
-      <p
-        v-if="pageError"
-        role="alert"
-        class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
-      >
-        {{ pageError }}
-      </p>
-
-      <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800 sm:p-6">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 class="text-lg font-bold text-gray-950 dark:text-white">{{ t('pelican.admin.config.title') }}</h2>
-            <p class="mt-1 max-w-2xl text-sm leading-6 text-gray-500 dark:text-dark-300">
-              {{ t('pelican.admin.config.description') }}
-            </p>
-          </div>
-          <span
-            class="rounded-full px-3 py-1 text-xs font-bold"
-            :class="config.enabled && config.daily_budget_usd > 0
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-              : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-dark-200'"
+        <div class="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :aria-label="t('pelican.rules.title')"
+            @click="openRules"
           >
-            {{ config.enabled && config.daily_budget_usd > 0 ? t('pelican.admin.config.active') : t('pelican.admin.config.paused') }}
-          </span>
-        </div>
-        <div class="mt-5 grid gap-4 md:grid-cols-[auto_1fr_auto] md:items-end">
-          <div class="flex items-center gap-3 rounded-2xl border border-gray-200 p-3 dark:border-dark-700">
-            <Toggle v-model="config.enabled" />
-            <div>
-              <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('pelican.admin.config.enabled') }}</p>
-              <p class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.config.enabledHint') }}</p>
-            </div>
-          </div>
-          <label class="space-y-1.5">
-            <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.admin.config.dailyBudget') }}</span>
-            <input v-model.number="config.daily_budget_usd" type="number" min="0" max="10000" step="0.01" class="input" />
-            <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.config.budgetHint') }}</span>
-          </label>
-          <button type="button" class="btn btn-primary" :disabled="savingConfig" @click="saveConfig">
-            {{ savingConfig ? t('common.saving') : t('common.save') }}
+            <Icon name="infoCircle" size="sm" />
+            <span class="hidden sm:inline">{{ t('pelican.rules.title') }}</span>
           </button>
-        </div>
-        <p class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          {{ t('pelican.admin.budgetNotice') }}
-        </p>
-      </section>
-
-      <section class="space-y-4">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-xl font-bold text-gray-950 dark:text-white">{{ t('pelican.admin.plans.title') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.description') }}</p>
-          </div>
-          <button type="button" class="btn btn-primary" @click="openCreatePlan">
+          <router-link
+            to="/pelican"
+            class="btn btn-secondary btn-sm"
+            :aria-label="t('pelican.admin.openUserPage')"
+          >
+            <Icon name="eye" size="sm" />
+            <span class="hidden sm:inline">{{ t('pelican.admin.openUserPage') }}</span>
+          </router-link>
+          <button type="button" class="btn btn-primary btn-sm" @click="openCreatePlan">
             <Icon name="plus" size="sm" />
             {{ t('pelican.admin.plans.create') }}
           </button>
         </div>
+      </header>
 
-        <div v-if="loadingPlans" class="grid gap-4 lg:grid-cols-2">
-          <div v-for="index in 2" :key="index" class="h-64 animate-pulse rounded-3xl bg-gray-100 dark:bg-dark-800"></div>
+      <form
+        class="pelican-config flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+        @submit.prevent="saveConfig"
+      >
+        <label class="flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-dark-100">
+          <Toggle v-model="config.enabled" />
+          <span>{{ t('pelican.admin.config.enabled') }}</span>
+        </label>
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold"
+          :class="savedCanRun
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+          {{ savedCanRun ? t('pelican.admin.config.active') : t('pelican.admin.config.paused') }}
+        </span>
+        <label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-dark-200">
+          <span>{{ t('pelican.admin.config.dailyBudget') }}</span>
+          <span>$</span>
+          <input
+            v-model.number="config.daily_budget_usd"
+            type="number"
+            min="0"
+            max="10000"
+            step="0.01"
+            class="input h-7 w-24 px-2 py-1 text-xs tabular-nums"
+          />
+        </label>
+        <p class="min-w-40 flex-1 text-[11px] text-gray-500 dark:text-dark-300 md:hidden xl:block">
+          {{ config.enabled && config.daily_budget_usd > 0
+            ? t('pelican.admin.config.enabledHint')
+            : t('pelican.admin.config.budgetHint') }}
+        </p>
+        <button type="submit" class="btn btn-primary btn-sm ml-auto" :disabled="savingConfig">
+          {{ savingConfig ? t('common.saving') : t('common.save') }}
+        </button>
+      </form>
+
+      <p
+        v-if="pageError"
+        role="alert"
+        class="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+      >
+        {{ pageError }}
+      </p>
+
+      <section class="pelican-panel flex shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="flex min-h-8 shrink-0 items-center justify-between gap-2 px-3">
+          <h2 class="text-sm font-semibold text-gray-950 dark:text-white">
+            {{ t('pelican.admin.plans.title') }}
+            <span class="ml-1 font-normal text-gray-500 dark:text-dark-300">{{ plans.length }}</span>
+          </h2>
+          <span class="hidden truncate text-[11px] text-gray-500 dark:text-dark-300 md:inline">
+            {{ t('pelican.admin.plans.description') }}
+          </span>
         </div>
-        <div v-else-if="plans.length" class="grid gap-4 lg:grid-cols-2">
-          <article
-            v-for="plan in plans"
-            :key="plan.id"
-            class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-mono text-xs font-semibold text-gray-500 dark:text-dark-300">#{{ plan.id }}</span>
-                  <span
-                    class="rounded-full px-2 py-1 text-[11px] font-bold"
-                    :class="plan.enabled
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                      : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-dark-200'"
-                  >
+        <div class="overflow-hidden">
+          <table class="pelican-table w-full table-fixed">
+            <thead>
+              <tr>
+                <th>{{ t('pelican.fields.group') }} / {{ t('pelican.fields.model') }}</th>
+                <th class="hidden lg:table-cell">{{ t('pelican.fields.effort') }} / {{ t('pelican.fields.protocol') }}</th>
+                <th class="hidden xl:table-cell">{{ t('pelican.admin.plans.interval') }} / {{ t('pelican.admin.plans.budget') }}</th>
+                <th class="hidden md:table-cell">{{ t('pelican.admin.plans.scheduleEnabled') }}</th>
+                <th class="hidden md:table-cell">{{ t('pelican.admin.plans.published') }}</th>
+                <th class="hidden md:table-cell">{{ t('pelican.admin.plans.lastRun') }}</th>
+                <th class="text-right">{{ t('common.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loadingPlans">
+                <td :colspan="7" class="py-8 text-center text-gray-500 dark:text-dark-300">
+                  {{ t('common.loading') }}
+                </td>
+              </tr>
+              <tr v-for="plan in planPageItems" v-else :key="plan.id" class="pelican-row pelican-plan-row">
+                <td class="min-w-0">
+                  <span class="pelican-cell-title">{{ plan.group_name }}</span>
+                  <code class="pelican-subcell pelican-desktop-model">{{ plan.model }}</code>
+                  <span class="pelican-subcell pelican-mobile-status">
                     {{ plan.enabled ? t('pelican.admin.plans.enabled') : t('pelican.admin.plans.disabled') }}
+                    · {{ plan.published ? t('pelican.admin.plans.isPublished') : t('pelican.admin.plans.unpublished') }}
+                    · {{ plan.model }}
                   </span>
-                  <span
-                    class="rounded-full px-2 py-1 text-[11px] font-bold"
-                    :class="plan.published
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'"
+                </td>
+                <td class="hidden lg:table-cell">
+                  <span class="pelican-cell-title">{{ plan.effort || t('pelican.effort.unspecified') }}</span>
+                  <span class="pelican-subcell">{{ t(`pelican.protocol.${plan.protocol}`) }}</span>
+                </td>
+                <td class="hidden xl:table-cell">
+                  <span class="pelican-cell-title">{{ t('pelican.admin.plans.minutes', { count: plan.interval_minutes }) }}</span>
+                  <span class="pelican-subcell tabular-nums">${{ plan.budget_usd.toFixed(2) }} · {{ t('pelican.fields.tokens', { count: plan.max_output_tokens }) }}</span>
+                </td>
+                <td class="hidden md:table-cell">
+                  <fieldset
+                    class="m-0 flex min-w-0 items-center border-0 p-0"
+                    :class="{ 'opacity-50': planBusy(plan.id) }"
+                    :disabled="planBusy(plan.id)"
                   >
-                    {{ plan.published ? t('pelican.admin.plans.isPublished') : t('pelican.admin.plans.unpublished') }}
+                    <Toggle
+                      :model-value="plan.enabled"
+                      :aria-label="`${plan.group_name} · ${plan.model} · ${t('pelican.admin.plans.scheduleEnabled')}`"
+                      @update:model-value="updatePlanFlag(plan, 'enabled', $event)"
+                    />
+                  </fieldset>
+                </td>
+                <td class="hidden md:table-cell">
+                  <fieldset
+                    class="m-0 flex min-w-0 items-center border-0 p-0"
+                    :class="{ 'opacity-50': planBusy(plan.id) }"
+                    :disabled="planBusy(plan.id)"
+                  >
+                    <Toggle
+                      :model-value="plan.published"
+                      :aria-label="`${plan.group_name} · ${plan.model} · ${t('pelican.admin.plans.published')}`"
+                      @update:model-value="updatePlanFlag(plan, 'published', $event)"
+                    />
+                  </fieldset>
+                </td>
+                <td class="hidden md:table-cell">
+                  <span class="pelican-cell-title">{{ plan.last_run_at ? formatDate(plan.last_run_at) : '—' }}</span>
+                  <span v-if="plan.running_until" class="pelican-subcell text-sky-600 dark:text-sky-300">
+                    {{ t('pelican.admin.plans.runningUntil', { time: formatTime(plan.running_until) }) }}
                   </span>
-                </div>
-                <h3 class="mt-2 break-words font-mono text-lg font-bold text-gray-950 dark:text-white">{{ plan.model }}</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ plan.group_name }}</p>
-              </div>
-              <div class="flex shrink-0 gap-1">
-                <button type="button" class="btn btn-ghost btn-icon" :title="t('common.edit')" @click="openEditPlan(plan)">
-                  <Icon name="edit" size="sm" />
-                </button>
-                <button type="button" class="btn btn-ghost btn-icon text-rose-600" :title="t('common.delete')" @click="removePlan(plan)">
-                  <Icon name="trash" size="sm" />
-                </button>
-              </div>
-            </div>
-
-            <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.fields.effort') }}</dt><dd class="mt-0.5 font-medium">{{ plan.effort || t('pelican.effort.unspecified') }}</dd></div>
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.fields.protocol') }}</dt><dd class="mt-0.5 font-medium">{{ t(`pelican.protocol.${plan.protocol}`) }}</dd></div>
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.interval') }}</dt><dd class="mt-0.5 tabular-nums">{{ t('pelican.admin.plans.minutes', { count: plan.interval_minutes }) }}</dd></div>
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.fields.outputCap') }}</dt><dd class="mt-0.5 tabular-nums">{{ t('pelican.fields.tokens', { count: plan.max_output_tokens }) }}</dd></div>
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.budget') }}</dt><dd class="mt-0.5 tabular-nums">${{ plan.budget_usd.toFixed(6) }}</dd></div>
-              <div><dt class="text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.lastRun') }}</dt><dd class="mt-0.5">{{ plan.last_run_at ? formatDate(plan.last_run_at) : '—' }}</dd></div>
-            </dl>
-
-            <div class="mt-4 rounded-2xl bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-dark-900/40 dark:text-dark-300">
-              <p>{{ t('pelican.admin.plans.nextRun', { time: formatDate(plan.next_run_at) }) }}</p>
-              <p v-if="plan.running_until" class="mt-1 font-semibold text-sky-700 dark:text-sky-300">
-                {{ t('pelican.admin.plans.runningUntil', { time: formatDate(plan.running_until) }) }}
-              </p>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="btn btn-primary flex-1"
-                :disabled="!canRun || runningPlanID != null"
-                :title="!canRun ? t('pelican.admin.plans.enableBeforeRun') : undefined"
-                @click="runNow(plan)"
-              >
-                <Icon name="play" size="sm" />
-                {{ runningPlanID === plan.id ? t('pelican.admin.plans.submitting') : t('pelican.admin.plans.runNow') }}
-              </button>
-              <button type="button" class="btn btn-secondary" @click="openEditPlan(plan)">
-                {{ t('common.edit') }}
-              </button>
-            </div>
-          </article>
+                  <span v-else class="pelican-subcell">{{ t('pelican.admin.plans.nextRun', { time: formatTime(plan.next_run_at) }) }}</span>
+                </td>
+                <td>
+                  <div class="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      class="pelican-icon-action"
+                      :title="t('common.edit')"
+                      :aria-label="`${t('common.edit')} · ${plan.group_name} · ${plan.model}`"
+                      @click="openEditPlan(plan)"
+                    >
+                      <Icon name="edit" size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      class="pelican-icon-action"
+                      :disabled="!savedCanRun || runningPlanID != null || planBusy(plan.id)"
+                      :title="savedCanRun ? t('pelican.admin.plans.runNow') : t('pelican.admin.plans.enableBeforeRun')"
+                      :aria-label="`${t('pelican.admin.plans.runNow')} · ${plan.group_name} · ${plan.model}`"
+                      @click="runNow(plan)"
+                    >
+                      <Icon name="play" size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      class="pelican-icon-action text-rose-600 dark:text-rose-300"
+                      :title="t('common.delete')"
+                      :aria-label="`${t('common.delete')} · ${plan.group_name} · ${plan.model}`"
+                      @click="removePlan(plan)"
+                    >
+                      <Icon name="trash" size="sm" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!loadingPlans && !plans.length">
+                <td :colspan="7" class="py-8 text-center text-gray-500 dark:text-dark-300">
+                  {{ t('pelican.admin.plans.empty') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div v-else class="rounded-3xl border border-dashed border-gray-300 bg-white p-10 text-center dark:border-dark-600 dark:bg-dark-800">
-          <p class="font-semibold text-gray-800 dark:text-dark-100">{{ t('pelican.admin.plans.empty') }}</p>
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.emptyHint') }}</p>
+        <div class="shrink-0 border-t border-gray-100 px-3 dark:border-dark-700">
+          <PelicanCompactPager
+            :page="planPageIndex"
+            :total="plans.length"
+            :page-size="planPageSize"
+            @update:page="planPageIndex = $event"
+          />
         </div>
       </section>
 
-      <section class="space-y-4">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-xl font-bold text-gray-950 dark:text-white">{{ t('pelican.admin.results.title') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.description') }}</p>
+      <section class="pelican-panel flex shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 px-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <h2 class="text-sm font-semibold text-gray-950 dark:text-white">
+              {{ t('pelican.admin.results.title') }}
+              <span class="ml-1 font-normal text-gray-500 dark:text-dark-300">{{ resultPage?.total || 0 }}</span>
+            </h2>
+            <span v-if="resultPage" class="hidden items-center gap-2 text-[10px] text-gray-500 dark:text-dark-300 xl:flex">
+              <span>{{ t('pelican.state.completed') }} {{ resultPage.stats.completed }}</span>
+              <span>{{ t('pelican.state.failed') }} {{ resultPage.stats.failed }}</span>
+              <span>{{ t('pelican.state.unknown') }} {{ resultPage.stats.unknown }}</span>
+              <span>{{ t('pelican.state.running') }} {{ resultPage.stats.running }}</span>
+            </span>
           </div>
-          <button type="button" class="btn btn-secondary" :disabled="loadingResults" @click="loadResults(false)">
-            <Icon name="refresh" size="sm" :class="loadingResults ? 'animate-spin' : ''" />
-            {{ t('common.refresh') }}
-          </button>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div v-for="stat in resultStats" :key="stat.state" class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800">
-            <p class="text-xs text-gray-500 dark:text-dark-300">{{ stat.label }}</p>
-            <p class="mt-2 text-2xl font-black tabular-nums text-gray-950 dark:text-white">{{ stat.value }}</p>
-          </div>
-        </div>
-
-        <div class="grid gap-3 rounded-3xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
-          <Select
-            v-model="resultPlanFilter"
-            :options="planFilterOptions"
-            :placeholder="t('pelican.admin.results.allPlans')"
-            searchable
-            clearable
-          />
-          <Select
-            v-model="resultStateFilter"
-            :options="stateFilterOptions"
-            :placeholder="t('pelican.admin.results.allStates')"
-            clearable
-          />
-          <div class="flex gap-2">
-            <button type="button" class="btn btn-primary flex-1" @click="applyResultFilters">
-              {{ t('pelican.filters.apply') }}
+          <div class="flex items-center gap-1.5">
+            <Select
+              v-model="resultPlanFilter"
+              :options="planFilterOptions"
+              :placeholder="t('pelican.admin.results.allPlans')"
+              searchable
+              clearable
+              class="pelican-filter-select w-32"
+              @change="applyResultFilters"
+            />
+            <Select
+              v-model="resultStateFilter"
+              :options="stateFilterOptions"
+              :placeholder="t('pelican.admin.results.allStates')"
+              clearable
+              class="pelican-filter-select w-28"
+              @change="applyResultFilters"
+            />
+            <button
+              type="button"
+              class="pelican-icon-action"
+              :disabled="loadingResults"
+              :title="t('common.refresh')"
+              :aria-label="t('common.refresh')"
+              @click="loadResults(false)"
+            >
+              <Icon name="refresh" size="sm" :class="loadingResults ? 'animate-spin' : ''" />
             </button>
-            <button type="button" class="btn btn-secondary" @click="resetResultFilters">
-              {{ t('pelican.filters.reset') }}
-            </button>
           </div>
         </div>
-
-        <p v-if="resultError" role="alert" class="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+        <p
+          v-if="resultError"
+          role="alert"
+          class="mx-3 mb-1 shrink-0 rounded-lg bg-rose-50 px-2 py-1 text-xs text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"
+        >
           {{ resultError }}
         </p>
-
-        <div v-if="loadingResults && !resultPage" class="grid gap-4 md:grid-cols-2">
-          <div v-for="index in 4" :key="index" class="h-64 animate-pulse rounded-3xl bg-gray-100 dark:bg-dark-800"></div>
-        </div>
-        <div v-else-if="resultPage?.items.length" class="grid gap-4 md:grid-cols-2">
-          <article
-            v-for="run in resultPage.items"
-            :key="run.id"
-            class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span
-                    class="rounded-full border px-2 py-1 text-[11px] font-bold"
-                    :class="pelicanStateClass(run.state)"
-                  >
+        <div class="overflow-hidden">
+          <table class="pelican-table w-full table-fixed">
+            <thead>
+              <tr>
+                <th>{{ t('pelican.fields.group') }} / {{ t('pelican.fields.model') }}</th>
+                <th>{{ t('common.status') }}</th>
+                <th class="hidden md:table-cell">{{ t('pelican.admin.results.terminal') }}</th>
+                <th class="hidden lg:table-cell">{{ t('pelican.admin.results.cost') }}</th>
+                <th class="hidden md:table-cell">{{ t('pelican.admin.plans.published') }}</th>
+                <th class="text-right">{{ t('common.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loadingResults && !resultPage">
+                <td :colspan="6" class="py-8 text-center text-gray-500 dark:text-dark-300">
+                  {{ t('common.loading') }}
+                </td>
+              </tr>
+              <tr v-for="run in resultPage?.items || []" v-else :key="run.id" class="pelican-row">
+                <td class="min-w-0">
+                  <span class="pelican-cell-title">{{ run.group_name }}</span>
+                  <span class="pelican-subcell">{{ run.frozen.model }} · {{ formatDate(run.created_at) }}</span>
+                </td>
+                <td>
+                  <span class="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold" :class="stateTextClass(run.state)">
+                    <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
                     {{ t(`pelican.state.${run.state}`) }}
                   </span>
-                  <span class="text-xs text-gray-500 dark:text-dark-300">{{ formatDate(run.created_at) }}</span>
-                </div>
-                <h3 class="mt-2 break-words font-mono text-base font-bold text-gray-950 dark:text-white">{{ run.frozen.model }}</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ run.group_name }} · #{{ run.plan_id }}</p>
-              </div>
-              <span class="shrink-0 text-xs font-semibold tabular-nums text-gray-500 dark:text-dark-300">
-                {{ formatPelicanDuration(run.duration_ms) }}
-              </span>
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-dark-200">
-              <p>{{ t('pelican.fields.effort') }}: {{ run.frozen.effort || t('pelican.effort.unspecified') }}</p>
-              <p>{{ t('pelican.fields.protocol') }}: {{ t(`pelican.protocol.${run.frozen.protocol}`) }}</p>
-              <p>{{ t('pelican.admin.results.account') }}: #{{ run.account_id }}</p>
-              <p>{{ t('pelican.admin.results.cost') }}: {{ run.cost_usd == null ? '—' : `$${run.cost_usd.toFixed(6)}` }}</p>
-            </div>
-            <p v-if="run.error_kind" class="mt-3 text-xs font-medium text-rose-600 dark:text-rose-300">
-              {{ t(`pelican.errorKind.${run.error_kind}`) }}
-            </p>
-            <button type="button" class="btn btn-secondary mt-4 w-full" @click="openResult(run.id)">
-              <Icon name="eye" size="sm" />
-              {{ t('pelican.actions.details') }}
-            </button>
-          </article>
+                  <span class="pelican-subcell">{{ formatPelicanDuration(run.duration_ms) }}</span>
+                </td>
+                <td class="hidden md:table-cell">
+                  <span class="pelican-cell-title">{{ run.error_kind ? t(`pelican.errorKind.${run.error_kind}`) : run.terminal || '—' }}</span>
+                  <span class="pelican-subcell">#{{ run.plan_id }} · #{{ run.account_id }}</span>
+                </td>
+                <td class="hidden lg:table-cell">
+                  <span class="pelican-cell-title tabular-nums">{{ run.cost_usd == null ? t('pelican.admin.results.unknownCost') : `$${run.cost_usd.toFixed(4)}` }}</span>
+                  <span class="pelican-subcell tabular-nums">${{ run.reserved_usd.toFixed(4) }}</span>
+                </td>
+                <td class="hidden md:table-cell">
+                  <span class="pelican-cell-title">{{ run.published ? t('pelican.admin.plans.isPublished') : t('pelican.admin.plans.unpublished') }}</span>
+                </td>
+                <td>
+                  <div class="flex justify-end">
+                    <button type="button" class="pelican-text-action" @click="openResult(run.id)">
+                      {{ t('pelican.actions.details') }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!loadingResults && resultPage && !resultPage.items.length">
+                <td :colspan="6" class="py-8 text-center text-gray-500 dark:text-dark-300">
+                  {{ t('pelican.admin.results.empty') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div v-else-if="resultPage" class="rounded-3xl border border-dashed border-gray-300 bg-white p-10 text-center dark:border-dark-600 dark:bg-dark-800">
-          <p class="font-semibold text-gray-800 dark:text-dark-100">{{ t('pelican.admin.results.empty') }}</p>
-        </div>
-
-        <div v-if="resultPage && resultPage.total > 0" class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800">
-          <Pagination
-            :page="resultPage.page"
-            :total="resultPage.total"
-            :page-size="resultPage.page_size"
-            :show-page-size-selector="false"
+        <div class="shrink-0 border-t border-gray-100 px-3 dark:border-dark-700">
+          <PelicanCompactPager
+            :page="resultPageIndex"
+            :total="resultPage?.total || 0"
+            :page-size="resultPageSize"
             @update:page="changeResultPage"
           />
         </div>
@@ -273,31 +339,30 @@
         @close="planDialogOpen = false"
         @save="savePlan"
       />
-      <PelicanAdminResultDialog
-        :show="resultDialogOpen"
-        :run-id="selectedResultID"
-        @close="resultDialogOpen = false"
-      />
+      <PelicanAdminResultDialog :show="resultDialogOpen" :run-id="selectedResultID" @close="resultDialogOpen = false" />
+      <PelicanRulesDialog :show="rulesOpen" :prompt="rulesPrompt" :prompt-version="rulesPromptVersion" @close="rulesOpen = false" />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import PelicanCompactPager from '@/components/pelican/PelicanCompactPager.vue'
 import PelicanPlanDialog from '@/components/pelican/PelicanPlanDialog.vue'
 import PelicanAdminResultDialog from '@/components/pelican/PelicanAdminResultDialog.vue'
-import { formatPelicanDuration, pelicanStateClass } from '@/components/pelican/pelicanFormat'
+import PelicanRulesDialog from '@/components/pelican/PelicanRulesDialog.vue'
+import { formatPelicanDuration } from '@/components/pelican/pelicanFormat'
 import {
   deletePelicanPlan,
   getPelicanAdminResults,
   getPelicanConfig,
   getPelicanPlans,
+  getPelicanResults,
   runPelicanPlan,
   savePelicanConfig,
   savePelicanPlan,
@@ -313,11 +378,19 @@ import type {
   PelicanPlanInput,
   PelicanRunState,
 } from '@/types/pelican'
+import {
+  canRunPelicanTests,
+  clampPage,
+  pelicanPlanInput,
+  pelicanSubmitID,
+  pelicanViewportRows,
+} from './pelicanAdmin'
 
 const { t } = useI18n()
 const pageError = ref('')
 const resultError = ref('')
 const config = reactive<PelicanConfig>({ enabled: false, daily_budget_usd: 0 })
+const savedConfig = ref<PelicanConfig>({ enabled: false, daily_budget_usd: 0 })
 const savingConfig = ref(false)
 const plans = ref<PelicanPlan[]>([])
 const groups = ref<AdminGroup[]>([])
@@ -325,19 +398,36 @@ const loadingPlans = ref(false)
 const planDialogOpen = ref(false)
 const editingPlan = ref<PelicanPlan | null>(null)
 const savingPlan = ref(false)
+const togglingPlanIDs = ref<Set<number>>(new Set())
 const runningPlanID = ref<number | null>(null)
 const submitIDs = reactive<Record<string, string>>({})
 const resultPage = ref<PelicanAdminPage | null>(null)
 const loadingResults = ref(false)
 const resultPageIndex = ref(1)
 const resultPlanFilter = ref<number | null>(null)
-const resultStateFilter = ref<PelicanRunState | ''>('')
+const resultStateFilter = ref<PelicanRunState | null>(null)
 const resultDialogOpen = ref(false)
 const selectedResultID = ref<string | null>(null)
+const rulesOpen = ref(false)
+const rulesPrompt = ref('')
+const rulesPromptVersion = ref('pelican-bicycle-v1')
+const adminRoot = ref<HTMLElement | null>(null)
+const viewport = reactive({ width: window.innerWidth, height: window.innerHeight })
+const planPageIndex = ref(1)
+let mounted = false
+let layoutObserver: ResizeObserver | null = null
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollAttempts = 0
+let planRequestSequence = 0
+let resultRequestSequence = 0
 
-const canRun = computed(() => config.enabled && config.daily_budget_usd > 0)
+const viewportRows = computed(() => pelicanViewportRows(viewport.width, viewport.height))
+const planPageSize = computed(() => viewportRows.value.plans)
+const resultPageSize = computed(() => viewportRows.value.results)
+const planPageItems = computed(() => {
+  const start = (planPageIndex.value - 1) * planPageSize.value
+  return plans.value.slice(start, start + planPageSize.value)
+})
 const planFilterOptions = computed(() =>
   plans.value.map((plan) => ({ value: plan.id, label: `#${plan.id} · ${plan.model}` })),
 )
@@ -347,16 +437,50 @@ const stateFilterOptions = [
   { value: 'unknown', label: t('pelican.state.unknown') },
   { value: 'running', label: t('pelican.state.running') },
 ]
-const resultStats = computed(() => [
-  { state: 'completed', label: t('pelican.state.completed'), value: resultPage.value?.stats.completed || 0 },
-  { state: 'failed', label: t('pelican.state.failed'), value: resultPage.value?.stats.failed || 0 },
-  { state: 'unknown', label: t('pelican.state.unknown'), value: resultPage.value?.stats.unknown || 0 },
-  { state: 'running', label: t('pelican.state.running'), value: resultPage.value?.stats.running || 0 },
-])
+const savedCanRun = computed(() => canRunPelicanTests(savedConfig.value))
+
+watch(
+  [() => plans.value.length, planPageSize],
+  () => {
+    planPageIndex.value = clampPage(planPageIndex.value, plans.value.length, planPageSize.value)
+  },
+  { immediate: true },
+)
+
+watch(resultPageSize, () => {
+  if (!mounted) return
+  resultPageIndex.value = 1
+  void loadResults(false)
+})
 
 function formatDate(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function stateTextClass(state: PelicanRunState): string {
+  if (state === 'completed') return 'text-emerald-600 dark:text-emerald-300'
+  if (state === 'failed') return 'text-rose-600 dark:text-rose-300'
+  if (state === 'unknown') return 'text-amber-600 dark:text-amber-300'
+  return 'text-sky-600 dark:text-sky-300'
+}
+
+function planBusy(id: number): boolean {
+  return togglingPlanIDs.value.has(id)
+}
+
+function setPlanBusy(id: number, busy: boolean) {
+  const next = new Set(togglingPlanIDs.value)
+  if (busy) next.add(id)
+  else next.delete(id)
+  togglingPlanIDs.value = next
 }
 
 function clearPoll() {
@@ -366,20 +490,37 @@ function clearPoll() {
 
 function schedulePoll() {
   clearPoll()
+  const runningPlan = plans.value.some((plan) =>
+    plan.running_until ? Date.parse(plan.running_until) > Date.now() : false,
+  )
   if (
     document.visibilityState !== 'visible'
-    || (!resultPage.value?.stats.running && !plans.value.some((plan) => plan.running_until))
+    || (!resultPage.value?.stats.running && !runningPlan)
     || pollAttempts >= 60
   ) return
   pollTimer = setTimeout(async () => {
     pollAttempts += 1
-    await Promise.all([loadPlans(), loadResults(true)])
+    await Promise.all([loadPlans(true), loadResults(true)])
   }, 10_000)
 }
 
 async function loadConfig() {
   try {
-    Object.assign(config, await getPelicanConfig())
+    const loaded = await getPelicanConfig()
+    Object.assign(config, loaded)
+    savedConfig.value = { ...loaded }
+  } catch (error) {
+    pageError.value = extractApiErrorMessage(error, t('common.error'))
+  }
+}
+
+async function openRules() {
+  rulesOpen.value = true
+  if (rulesPrompt.value) return
+  try {
+    const result = await getPelicanResults({ page: 1, page_size: 1 })
+    rulesPrompt.value = result.prompt
+    rulesPromptVersion.value = result.prompt_version
   } catch (error) {
     pageError.value = extractApiErrorMessage(error, t('common.error'))
   }
@@ -394,41 +535,69 @@ async function loadGroups() {
   }
 }
 
-async function loadPlans() {
-  loadingPlans.value = true
+async function loadPlans(background = false) {
+  clearPoll()
+  const requestID = ++planRequestSequence
+  if (!background) loadingPlans.value = true
   try {
-    plans.value = await getPelicanPlans()
+    const loaded = await getPelicanPlans()
+    if (requestID === planRequestSequence) plans.value = loaded
   } catch (error) {
-    pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.loadFailed'))
+    if (requestID === planRequestSequence) {
+      pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.loadFailed'))
+    }
   } finally {
-    loadingPlans.value = false
-    schedulePoll()
+    if (requestID === planRequestSequence) {
+      loadingPlans.value = false
+      planPageIndex.value = clampPage(planPageIndex.value, plans.value.length, planPageSize.value)
+      schedulePoll()
+    }
   }
 }
 
 async function loadResults(background: boolean) {
+  clearPoll()
+  const requestID = ++resultRequestSequence
+  const requestedPage = resultPageIndex.value
   if (!background) loadingResults.value = true
+  if (!background) resultPage.value = null
   resultError.value = ''
   try {
-    resultPage.value = await getPelicanAdminResults({
+    const loaded = await getPelicanAdminResults({
       page: resultPageIndex.value,
-      page_size: 12,
+      page_size: resultPageSize.value,
       ...(resultPlanFilter.value ? { plan_id: resultPlanFilter.value } : {}),
       ...(resultStateFilter.value ? { state: resultStateFilter.value } : {}),
     })
+    if (requestID === resultRequestSequence) {
+      const lastPage = Math.max(1, loaded.pages)
+      if (requestedPage > lastPage) {
+        resultPageIndex.value = lastPage
+        void loadResults(background)
+        return
+      }
+      resultPage.value = loaded
+    }
   } catch (error) {
-    resultError.value = extractApiErrorMessage(error, t('pelican.admin.results.loadFailed'))
+    if (requestID === resultRequestSequence) {
+      resultError.value = extractApiErrorMessage(error, t('pelican.admin.results.loadFailed'))
+    }
   } finally {
-    loadingResults.value = false
-    schedulePoll()
+    if (requestID === resultRequestSequence) {
+      loadingResults.value = false
+      schedulePoll()
+    }
   }
 }
 
 async function saveConfig() {
+  clearPoll()
   savingConfig.value = true
   pageError.value = ''
   try {
-    Object.assign(config, await savePelicanConfig({ ...config }))
+    const saved = await savePelicanConfig({ ...config })
+    Object.assign(config, saved)
+    savedConfig.value = { ...saved }
   } catch (error) {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.config.saveFailed'))
   } finally {
@@ -447,6 +616,8 @@ function openEditPlan(plan: PelicanPlan) {
 }
 
 async function savePlan(input: PelicanPlanInput) {
+  clearPoll()
+  planRequestSequence += 1
   savingPlan.value = true
   pageError.value = ''
   try {
@@ -460,8 +631,32 @@ async function savePlan(input: PelicanPlanInput) {
   }
 }
 
+async function updatePlanFlag(
+  plan: PelicanPlan,
+  field: 'enabled' | 'published',
+  value: boolean,
+) {
+  if (planBusy(plan.id)) return
+  clearPoll()
+  planRequestSequence += 1
+  setPlanBusy(plan.id, true)
+  pageError.value = ''
+  try {
+    const input = pelicanPlanInput(plan, { [field]: value })
+    const saved = await savePelicanPlan(plan.id, input)
+    plans.value = plans.value.map((item) => item.id === plan.id ? saved : item)
+    await loadPlans(true)
+  } catch (error) {
+    pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.saveFailed'))
+  } finally {
+    setPlanBusy(plan.id, false)
+  }
+}
+
 async function removePlan(plan: PelicanPlan) {
   if (!window.confirm(t('pelican.admin.plans.deleteConfirm', { model: plan.model }))) return
+  clearPoll()
+  planRequestSequence += 1
   pageError.value = ''
   try {
     await deletePelicanPlan(plan.id)
@@ -473,16 +668,18 @@ async function removePlan(plan: PelicanPlan) {
 }
 
 async function runNow(plan: PelicanPlan) {
-  if (!canRun.value || runningPlanID.value != null) return
+  if (!savedCanRun.value || runningPlanID.value != null) return
+  clearPoll()
+  planRequestSequence += 1
   const key = String(plan.id)
-  if (!submitIDs[key]) submitIDs[key] = operationsUUID()
+  submitIDs[key] = pelicanSubmitID(submitIDs[key], operationsUUID)
   runningPlanID.value = plan.id
   pageError.value = ''
   try {
     await runPelicanPlan(plan.id, submitIDs[key])
     delete submitIDs[key]
     resultPageIndex.value = 1
-    await Promise.all([loadPlans(), loadResults(false)])
+    await Promise.all([loadPlans(true), loadResults(false)])
   } catch (error) {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.runFailed'))
   } finally {
@@ -494,12 +691,6 @@ function applyResultFilters() {
   resultPageIndex.value = 1
   pollAttempts = 0
   void loadResults(false)
-}
-
-function resetResultFilters() {
-  resultPlanFilter.value = null
-  resultStateFilter.value = ''
-  applyResultFilters()
 }
 
 function changeResultPage(page: number) {
@@ -518,13 +709,235 @@ function handleVisibilityChange() {
   else clearPoll()
 }
 
+function handleResize() {
+  viewport.width = window.innerWidth
+  viewport.height = adminRoot.value?.clientHeight ?? window.innerHeight
+}
+
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('resize', handleResize)
+  if (adminRoot.value) {
+    viewport.height = adminRoot.value.clientHeight || window.innerHeight
+    layoutObserver = new ResizeObserver(([entry]) => {
+      viewport.width = window.innerWidth
+      viewport.height = entry.contentRect.height
+    })
+    layoutObserver.observe(adminRoot.value)
+  }
+  mounted = true
   await Promise.all([loadConfig(), loadGroups(), loadPlans(), loadResults(false)])
 })
 
 onBeforeUnmount(() => {
+  layoutObserver?.disconnect()
+  planRequestSequence += 1
+  resultRequestSequence += 1
   clearPoll()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('resize', handleResize)
 })
 </script>
+
+<style scoped>
+.pelican-admin :deep(.btn-sm) {
+  min-height: 28px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.pelican-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.72rem;
+}
+
+.pelican-table th {
+  height: 27px;
+  border-bottom: 1px solid rgb(229 231 235);
+  background: rgb(249 250 251);
+  padding: 0.28rem 0.55rem;
+  color: rgb(100 116 139);
+  font-size: 0.64rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pelican-table td {
+  height: 38px;
+  border-top: 1px solid rgb(243 244 246);
+  padding: 0.3rem 0.55rem;
+  vertical-align: middle;
+}
+
+.pelican-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.pelican-table th:first-child {
+  width: 28%;
+}
+
+.pelican-table th:nth-child(2) {
+  width: 17%;
+}
+
+.pelican-table th:nth-child(3) {
+  width: 18%;
+}
+
+.pelican-table th:nth-child(4),
+.pelican-table th:nth-child(5) {
+  width: 8%;
+}
+
+.pelican-table th:nth-child(6) {
+  width: 14%;
+}
+
+.pelican-table th:last-child {
+  width: 14%;
+}
+
+.pelican-cell-title,
+.pelican-subcell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pelican-cell-title {
+  color: rgb(17 24 39);
+  font-weight: 500;
+}
+
+.pelican-subcell {
+  margin-top: 1px;
+  color: rgb(100 116 139);
+  font-size: 0.64rem;
+}
+
+@media (max-width: 767px) {
+  .pelican-desktop-model {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .pelican-mobile-status {
+    display: none;
+  }
+}
+
+.pelican-icon-action {
+  display: inline-flex;
+  height: 26px;
+  width: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.375rem;
+  color: rgb(100 116 139);
+}
+
+.pelican-icon-action:hover:not(:disabled) {
+  background: rgb(243 244 246);
+  color: rgb(15 23 42);
+}
+
+.pelican-icon-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.pelican-text-action {
+  color: rgb(79 70 229);
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pelican-text-action:hover {
+  text-decoration: underline;
+}
+
+.pelican-filter-select :deep(.select-trigger) {
+  min-height: 27px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.68rem;
+}
+
+.dark .pelican-table th {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42);
+  color: rgb(148 163 184);
+}
+
+.dark .pelican-table td {
+  border-color: rgb(30 41 59);
+}
+
+.dark .pelican-cell-title {
+  color: rgb(241 245 249);
+}
+
+.dark .pelican-subcell {
+  color: rgb(148 163 184);
+}
+
+.dark .pelican-icon-action {
+  color: rgb(148 163 184);
+}
+
+.dark .pelican-icon-action:hover:not(:disabled) {
+  background: rgb(30 41 59);
+  color: white;
+}
+
+@media (max-width: 900px) {
+  .pelican-table th:first-child {
+    width: 42%;
+  }
+
+  .pelican-table th:nth-child(2) {
+    width: 20%;
+  }
+
+  .pelican-table th:last-child {
+    width: 22%;
+  }
+}
+
+@media (max-width: 620px) {
+  .pelican-config {
+    row-gap: 0.35rem;
+  }
+
+  .pelican-table th,
+  .pelican-table td {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .pelican-table td {
+    height: 42px;
+  }
+
+  .pelican-plan-row td {
+    height: 40px;
+  }
+
+  .pelican-table th:first-child {
+    width: auto;
+  }
+
+  .pelican-table th:last-child {
+    width: 104px;
+  }
+
+  .pelican-filter-select {
+    width: 6.75rem;
+  }
+}
+</style>

@@ -59,6 +59,7 @@ type PelicanPublicRun struct {
 	DurationMS      int64      `json:"duration_ms"`
 	Terminal        string     `json:"terminal"`
 	ErrorKind       string     `json:"error_kind"`
+	HistoryCount    int        `json:"history_count,omitempty"`
 	Output          string     `json:"output,omitempty"`
 }
 type PelicanRun struct {
@@ -84,6 +85,7 @@ type PelicanFilter struct {
 	GroupID, PlanID      int64
 	Model, Effort, State string
 	Page, PageSize       int
+	LatestPerGroup       bool
 }
 type PelicanStats struct {
 	Completed int `json:"completed"`

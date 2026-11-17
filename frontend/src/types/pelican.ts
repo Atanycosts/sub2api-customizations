@@ -40,6 +40,7 @@ export interface PelicanPublicRun {
   duration_ms: number
   terminal: string
   error_kind: PelicanErrorKind
+  history_count?: number
 }
 
 export interface PelicanPublicRunDetail extends PelicanPublicRun {
@@ -62,6 +63,7 @@ export interface PelicanPublicFilters {
   group_id?: number
   model?: string
   effort?: PelicanEffort
+  latest_per_group?: boolean
   page?: number
   page_size?: number
 }

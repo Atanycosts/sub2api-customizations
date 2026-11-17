@@ -6,95 +6,77 @@
     close-on-click-outside
     @close="$emit('close')"
   >
-    <form class="space-y-5" @submit.prevent="submit">
-      <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/40">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('pelican.admin.plans.scheduleEnabled') }}</p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.scheduleEnabledHint') }}</p>
-          </div>
-          <Toggle v-model="form.enabled" />
-        </div>
-        <div class="mt-4 flex items-center justify-between gap-3 border-t border-gray-200 pt-4 dark:border-dark-700">
-          <div>
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('pelican.admin.plans.published') }}</p>
-            <p class="mt-1 text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.publishedHint') }}</p>
-          </div>
-          <Toggle v-model="form.published" />
-        </div>
+    <form id="pelican-plan-form" class="pelican-plan-form" @submit.prevent="submit">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-gray-100 pb-3 dark:border-dark-700">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-dark-100">
+          <Toggle v-model="form.enabled" :aria-label="t('pelican.admin.plans.scheduleEnabled')" />
+          {{ t('pelican.admin.plans.scheduleEnabled') }}
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-dark-100">
+          <Toggle v-model="form.published" :aria-label="t('pelican.admin.plans.published')" />
+          {{ t('pelican.admin.plans.published') }}
+        </label>
       </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <label class="space-y-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.group') }}</span>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+        <label class="col-span-2 space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.group') }}</span>
           <Select
             v-model="form.group_id"
             :options="groupOptions"
             :placeholder="t('pelican.admin.plans.selectGroup')"
+            :aria-label="t('pelican.fields.group')"
             searchable
             @change="loadModels"
           />
-          <span class="block text-xs text-gray-500 dark:text-dark-300">
-            {{ t('pelican.admin.plans.groupScopeHint') }}
-          </span>
         </label>
-        <label class="space-y-1.5 sm:col-span-2">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.model') }}</span>
+        <label class="col-span-2 space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.model') }}</span>
           <Select
             v-model="form.model"
             :options="modelOptions"
             :placeholder="t('pelican.admin.plans.selectModel')"
+            :aria-label="t('pelican.fields.model')"
             :loading="loadingModels"
             :disabled="!form.group_id"
             searchable
             creatable
           />
         </label>
-        <label class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.effort') }}</span>
-          <Select v-model="form.effort" :options="effortOptions" :placeholder="t('pelican.effort.unspecified')" />
+        <label class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.effort') }}</span>
+          <Select v-model="form.effort" :options="effortOptions" :placeholder="t('pelican.effort.unspecified')" :aria-label="t('pelican.fields.effort')" />
         </label>
-        <label class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.protocol') }}</span>
-          <Select v-model="form.protocol" :options="protocolOptions" />
+        <label class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.protocol') }}</span>
+          <Select v-model="form.protocol" :options="protocolOptions" :aria-label="t('pelican.fields.protocol')" />
         </label>
-        <label class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.admin.plans.interval') }}</span>
+        <label class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.admin.plans.interval') }}</span>
           <input v-model.number="form.interval_minutes" type="number" min="30" max="10080" required class="input" />
-          <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.intervalHint') }}</span>
+          <span class="block text-[11px] text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.intervalHint') }}</span>
         </label>
-        <label class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.outputCap') }}</span>
+        <label class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.outputCap') }}</span>
           <input v-model.number="form.max_output_tokens" type="number" min="64" max="16384" required class="input" />
-          <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.outputHint') }}</span>
+          <span class="block text-[11px] text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.outputHint') }}</span>
         </label>
-        <label class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.admin.plans.budget') }}</span>
+        <label class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.admin.plans.budget') }}</span>
           <input v-model.number="form.budget_usd" type="number" min="0.000001" max="100" step="any" required class="input" />
-          <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.budgetHint') }}</span>
         </label>
-        <div class="space-y-1.5">
-          <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.promptVersion') }}</span>
-          <div class="input flex items-center bg-gray-50 font-mono text-gray-600 dark:bg-dark-900/40 dark:text-dark-200">
-            pelican-bicycle-v1
-          </div>
-          <span class="block text-xs text-gray-500 dark:text-dark-300">{{ t('pelican.admin.plans.promptFixed') }}</span>
+        <div class="space-y-1">
+          <span class="text-xs font-medium text-gray-700 dark:text-dark-100">{{ t('pelican.fields.promptVersion') }}</span>
+          <p class="flex min-h-9 items-center break-all font-mono text-xs text-gray-600 dark:text-dark-200">pelican-bicycle-v1</p>
         </div>
       </div>
-
-      <p class="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-        {{ t('pelican.admin.budgetNotice') }}
-      </p>
-
-      <div class="flex justify-end gap-2">
-        <button type="button" class="btn btn-secondary" :disabled="saving" @click="$emit('close')">
-          {{ t('common.cancel') }}
-        </button>
-        <button type="submit" class="btn btn-primary" :disabled="saving || !valid">
-          {{ saving ? t('common.saving') : t('common.save') }}
-        </button>
-      </div>
+      <p class="text-xs leading-5 text-gray-500 dark:text-dark-300">{{ t('pelican.admin.budgetNotice') }}</p>
     </form>
+    <template #footer>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" :disabled="saving" @click="$emit('close')">{{ t('common.cancel') }}</button>
+        <button type="submit" form="pelican-plan-form" class="btn btn-primary btn-sm" :disabled="saving || !valid">{{ saving ? t('common.saving') : t('common.save') }}</button>
+      </div>
+    </template>
   </BaseDialog>
 </template>
 
@@ -186,6 +168,9 @@ async function loadModels() {
       : await adminAPI.groups.getModelAllowlistCandidates(group.id, group.platform)
     if (requestID !== modelRequestSequence) return
     modelOptions.value = models.map((model) => ({ value: model, label: model }))
+    if (form.model && !models.includes(form.model)) {
+      modelOptions.value.unshift({ value: form.model, label: form.model })
+    }
   } finally {
     if (requestID === modelRequestSequence) loadingModels.value = false
   }
@@ -220,3 +205,20 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style scoped>
+.pelican-plan-form {
+  display: grid;
+  gap: 12px;
+}
+.pelican-plan-form :deep(.input) {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+@media (pointer: coarse) {
+  .pelican-plan-form input {
+    font-size: 16px;
+  }
+}
+</style>

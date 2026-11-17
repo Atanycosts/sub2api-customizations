@@ -58,10 +58,45 @@ func TestPelicanPublicVisibilityUsesEmptyPermissionSetAndThinList(t *testing.T) 
 	defer func() { _ = db.Close() }()
 	r := &pelicanRepository{db: db}
 	m.ExpectQuery("SELECT COUNT").WillReturnRows(sqlmock.NewRows([]string{"total", "completed", "failed", "unknown", "running"}).AddRow(0, 0, 0, 0, 0))
-	m.ExpectQuery("SELECT r.result-'output'-'raw_response'-'usage'-'timing'").WillReturnRows(sqlmock.NewRows([]string{"result"}))
+	m.ExpectQuery("SELECT r.result-'output'-'raw_response'-'usage'-'timing'.*ORDER BY r.created_at DESC,r.id DESC LIMIT").WillReturnRows(sqlmock.NewRows([]string{"result"}))
 	items, total, _, err := r.Results(context.Background(), service.PelicanFilter{Page: 1, PageSize: 12}, []int64{}, true)
 	require.NoError(t, err)
 	require.Empty(t, items)
 	require.Zero(t, total)
+	require.NoError(t, m.ExpectationsWereMet())
+}
+
+func TestPelicanLatestPerGroupRanksFilteredRowsBeforePaging(t *testing.T) {
+	db, m, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	run := service.PelicanRun{PelicanPublicRun: service.PelicanPublicRun{
+		ID:           "00000000-0000-0000-0000-000000000002",
+		GroupID:      9,
+		Model:        "gpt-5",
+		Effort:       "high",
+		State:        "failed",
+		HistoryCount: 5,
+	}}
+	b, _ := json.Marshal(run)
+	m.ExpectQuery(`WITH filtered AS .*COUNT\(\*\) OVER\(PARTITION BY r\.group_id\).*ROW_NUMBER\(\) OVER\(PARTITION BY r\.group_id ORDER BY r\.created_at DESC,r\.id DESC\).*WHERE NOT r\.payload_pruned.*r\.group_id=ANY\(\$1\).*p\.published.*enabled.*SELECT COUNT\(\*\).*state='failed'.*FROM filtered WHERE group_rank=1`).
+		WillReturnRows(sqlmock.NewRows([]string{"total", "completed", "failed", "unknown", "running"}).AddRow(2, 1, 1, 0, 0))
+	m.ExpectQuery(`WITH filtered AS .*SELECT result,history_count FROM filtered WHERE group_rank=1 ORDER BY created_at DESC,id DESC LIMIT \$4 OFFSET \$5`).
+		WillReturnRows(sqlmock.NewRows([]string{"result", "history_count"}).AddRow(b, 5))
+
+	r := &pelicanRepository{db: db}
+	items, total, stats, err := r.Results(context.Background(), service.PelicanFilter{
+		Model:          "gpt-5",
+		Effort:         "high",
+		Page:           1,
+		PageSize:       1,
+		LatestPerGroup: true,
+	}, []int64{9}, true)
+	require.NoError(t, err)
+	require.Equal(t, 2, total)
+	require.Equal(t, service.PelicanStats{Failed: 1, Completed: 1}, stats)
+	require.Len(t, items, 1)
+	require.Equal(t, 5, items[0].HistoryCount)
+	require.Equal(t, "failed", items[0].State)
 	require.NoError(t, m.ExpectationsWereMet())
 }

@@ -107,6 +107,16 @@ func pelicanFilter(c *gin.Context, admin bool) (service.PelicanFilter, bool) {
 		response.BadRequest(c, "invalid result state")
 		return f, false
 	}
+	if !admin {
+		if raw, supplied := c.GetQuery("latest_per_group"); supplied {
+			value, err := strconv.ParseBool(raw)
+			if err != nil {
+				response.BadRequest(c, "latest_per_group must be true or false")
+				return f, false
+			}
+			f.LatestPerGroup = value
+		}
+	}
 	return f, true
 }
 

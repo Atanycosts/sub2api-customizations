@@ -24,6 +24,27 @@ export default {
       title: 'Result wall',
       description: 'Completed, failed, unknown, and running records stay visible. Previews load only as cards enter view.',
       count: '{count} records',
+      latestPerGroup: 'Latest matching result per group',
+      gridView: 'Card grid',
+      listView: 'Compact list',
+    },
+    rules: {
+      title: 'Test rules',
+      prompt: 'Fixed test prompt',
+      promptUnavailable: 'The prompt is unavailable until results load.',
+    },
+    history: {
+      title: 'History · {group}',
+      scope: 'Published results matching the current model and effort filters.',
+      action: 'History',
+      count: 'History {count}',
+      loadFailed: 'Unable to load the history.',
+    },
+    pagination: {
+      label: 'Result pagination',
+      range: '{start}–{end} of {total}',
+      previous: 'Previous',
+      next: 'Next',
     },
     empty: {
       title: 'No matching observations',

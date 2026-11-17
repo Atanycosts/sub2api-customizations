@@ -22,6 +22,12 @@ FRONTEND_CRITICAL_VITEST := \
 	src/api/__tests__/channelMonitorV2.spec.ts \
 	src/api/__tests__/pelican.spec.ts \
 	src/components/pelican/__tests__/compareSelection.spec.ts \
+	src/components/pelican/__tests__/galleryLayout.spec.ts \
+	src/components/pelican/__tests__/PelicanTestCard.spec.ts \
+	src/components/pelican/__tests__/PelicanDetailDialog.spec.ts \
+	src/views/user/__tests__/PelicanView.spec.ts \
+	src/views/admin/__tests__/pelicanAdmin.spec.ts \
+	src/views/admin/__tests__/PelicanTestsView.spec.ts \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
 	src/views/auth/__tests__/WechatCallbackView.spec.ts \
 	src/views/user/__tests__/PaymentView.spec.ts \

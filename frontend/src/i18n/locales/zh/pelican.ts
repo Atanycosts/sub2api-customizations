@@ -24,6 +24,27 @@ export default {
       title: '实测结果墙',
       description: '查看最新作品和每次测试的实际结果。',
       count: '共 {count} 条',
+      latestPerGroup: '每个渠道最近一次匹配结果',
+      gridView: '卡片视图',
+      listView: '紧凑列表',
+    },
+    rules: {
+      title: '测试说明',
+      prompt: '固定测试提示词',
+      promptUnavailable: '结果加载后可查看固定提示词。',
+    },
+    history: {
+      title: '历史记录 · {group}',
+      scope: '已公开、符合当前模型和强度筛选的结果。',
+      action: '历史',
+      count: '历史 {count}',
+      loadFailed: '无法加载历史记录。',
+    },
+    pagination: {
+      label: '结果分页',
+      range: '{start}–{end} / 共 {total}',
+      previous: '上一页',
+      next: '下一页',
     },
     empty: {
       title: '没有匹配的观察记录',

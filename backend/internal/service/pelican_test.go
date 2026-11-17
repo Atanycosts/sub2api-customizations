@@ -13,7 +13,7 @@ import (
 )
 
 func TestPelicanPublicProjectionWhitelistsSensitiveFields(t *testing.T) {
-	run := PelicanRun{PelicanPublicRun: PelicanPublicRun{ID: "public", Output: "<html></html>", Terminal: "https://private.example/sk-secret", ErrorKind: "private-provider-error"}, AccountID: 999, Error: "credential secret", Endpoint: "private-url", ReservedUSD: 12, RawResponse: json.RawMessage(`{"secret":"private"}`), RequestedBy: 4}
+	run := PelicanRun{PelicanPublicRun: PelicanPublicRun{ID: "public", Output: "<html></html>", Terminal: "https://private.example/sk-secret", ErrorKind: "private-provider-error", HistoryCount: 3}, AccountID: 999, Error: "credential secret", Endpoint: "private-url", ReservedUSD: 12, RawResponse: json.RawMessage(`{"secret":"private"}`), RequestedBy: 4}
 	data, err := json.Marshal(pelicanPublic(run))
 	require.NoError(t, err)
 	for _, secret := range []string{"account_id", "reserved_usd", "raw_response", "requested_by", "private", "credential", "endpoint"} {
@@ -21,6 +21,7 @@ func TestPelicanPublicProjectionWhitelistsSensitiveFields(t *testing.T) {
 	}
 	require.Equal(t, "other", gjson.GetBytes(data, "terminal").String())
 	require.Equal(t, "upstream_error", gjson.GetBytes(data, "error_kind").String())
+	require.Equal(t, int64(3), gjson.GetBytes(data, "history_count").Int())
 }
 func TestPelicanBodiesFreezePromptVersionAndOutputCap(t *testing.T) {
 	for _, protocol := range []string{"chat", "responses"} {

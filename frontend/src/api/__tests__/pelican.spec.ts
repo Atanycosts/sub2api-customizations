@@ -39,13 +39,27 @@ describe('pelican API', () => {
       .mockResolvedValueOnce({ data: { id: 'run-1', output: '<svg/>' } })
 
     await getPelicanResults(
-      { group_id: 10, model: 'gpt-5', effort: 'high', page: 2, page_size: 12 },
+      {
+        group_id: 10,
+        model: 'gpt-5',
+        effort: 'high',
+        latest_per_group: true,
+        page: 2,
+        page_size: 12,
+      },
       { signal },
     )
     await getPelicanResult('run-1', { signal })
 
     expect(get).toHaveBeenNthCalledWith(1, '/pelican', {
-      params: { group_id: 10, model: 'gpt-5', effort: 'high', page: 2, page_size: 12 },
+      params: {
+        group_id: 10,
+        model: 'gpt-5',
+        effort: 'high',
+        latest_per_group: true,
+        page: 2,
+        page_size: 12,
+      },
       signal,
     })
     expect(get).toHaveBeenNthCalledWith(2, '/pelican/run-1', { signal })

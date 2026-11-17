@@ -1,193 +1,159 @@
 <template>
-  <AppLayout>
-    <div class="mx-auto max-w-7xl space-y-6 pb-10">
-      <section class="relative overflow-hidden rounded-[2rem] border border-cyan-100 bg-gradient-to-br from-cyan-50 via-white to-amber-50 px-5 py-5 shadow-sm dark:border-cyan-900/40 dark:from-cyan-950/40 dark:via-dark-800 dark:to-amber-950/20 sm:px-7">
-        <div class="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-cyan-200/40 blur-3xl dark:bg-cyan-700/20"></div>
-        <div class="relative max-w-3xl">
-          <div class="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-white/80 px-3 py-1 text-xs font-bold text-cyan-800 shadow-sm backdrop-blur dark:border-cyan-800 dark:bg-dark-800/80 dark:text-cyan-200">
-            <Icon name="beaker" size="sm" />
-            {{ t('pelican.page.badge') }}
-          </div>
-          <h1 class="text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-            {{ t('pelican.page.title') }}
-          </h1>
-          <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-dark-200">
-            {{ t('pelican.page.description') }}
-          </p>
-          <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <span class="rounded-full bg-white/85 px-3 py-1 font-mono font-semibold text-slate-700 ring-1 ring-slate-200 dark:bg-dark-800/85 dark:text-dark-100 dark:ring-dark-600">
-              {{ t('pelican.page.promptVersion', { version: data?.prompt_version || 'v1' }) }}
-            </span>
-            <span class="rounded-full bg-white/85 px-3 py-1 font-semibold text-slate-700 ring-1 ring-slate-200 dark:bg-dark-800/85 dark:text-dark-100 dark:ring-dark-600">
-              {{ t('pelican.page.readOnly') }}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <section class="flex flex-wrap gap-2" :aria-label="t('pelican.stats.title')">
-        <div
-          v-for="stat in statCards"
-          :key="stat.state"
-          class="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs shadow-sm dark:border-dark-700 dark:bg-dark-800"
-        >
-          <span class="h-2 w-2 rounded-full" :class="stat.dotClass"></span>
-          <span class="font-medium text-gray-500 dark:text-dark-300">{{ stat.label }}</span>
-          <span class="font-black tabular-nums text-gray-950 dark:text-white">{{ stat.value }}</span>
-        </div>
-      </section>
-
-      <section class="rounded-3xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800 sm:p-5">
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1.3fr_1fr_auto_auto]">
-          <Select
-            v-model="groupFilter"
-            :options="groupOptions"
-            :placeholder="t('pelican.filters.allGroups')"
-            :searchable="true"
-            clearable
-            :aria-label="t('pelican.filters.group')"
-            @change="applyFilters"
-          />
-          <div class="relative">
-            <input
-              v-model.trim="modelFilter"
-              list="pelican-model-options"
-              class="input pr-10"
-              :placeholder="t('pelican.filters.modelPlaceholder')"
-              :aria-label="t('pelican.filters.model')"
-              @keyup.enter="applyFilters"
-            />
-            <datalist id="pelican-model-options">
-              <option v-for="model in knownModels" :key="model" :value="model" />
-            </datalist>
-            <Icon name="search" size="sm" class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          </div>
-          <Select
-            v-model="effortFilter"
-            :options="effortOptions"
-            :placeholder="t('pelican.filters.allEfforts')"
-            clearable
-            :aria-label="t('pelican.filters.effort')"
-            @change="applyFilters"
-          />
-          <button type="button" class="btn btn-primary" :disabled="loading" @click="applyFilters">
-            {{ t('pelican.filters.apply') }}
+  <AppLayout viewport>
+    <div class="pelican-page flex min-h-0 w-full flex-1 flex-col gap-3">
+      <header class="flex shrink-0 items-center justify-between gap-2">
+        <h1 class="truncate text-xl font-bold text-gray-950 dark:text-white">
+          {{ t('pelican.page.title') }}
+        </h1>
+        <div class="flex shrink-0 items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" @click="rulesOpen = true">
+            {{ t('pelican.rules.title') }}
           </button>
-          <button type="button" class="btn btn-secondary" :disabled="loading" @click="resetFilters">
-            {{ t('pelican.filters.reset') }}
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            :disabled="selectedForCompare.length !== 2"
+            @click="compareOpen = true"
+          >
+            {{ t('pelican.actions.compare') }} {{ selectedForCompare.length }}/2
+          </button>
+          <button
+            v-if="selectedForCompare.length"
+            type="button"
+            class="text-xs text-gray-500"
+            @click="selectedForCompare = []"
+          >
+            {{ t('pelican.actions.clear') }}
           </button>
         </div>
-      </section>
+      </header>
 
-      <p
-        v-if="error"
-        role="alert"
-        class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+      <form
+        class="pelican-filters grid shrink-0 grid-cols-2 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto_auto]"
+        @submit.prevent="applyFilters"
       >
+        <Select
+          v-model="groupFilter"
+          :options="groupOptions"
+          :placeholder="t('pelican.filters.allGroups')"
+          searchable
+          clearable
+          :aria-label="t('pelican.filters.group')"
+          @change="applyFilters"
+        />
+        <input
+          v-model.trim="modelFilter"
+          list="pelican-model-options"
+          class="input min-w-0"
+          :placeholder="t('pelican.filters.modelPlaceholder')"
+          :aria-label="t('pelican.filters.model')"
+          @change="applyFilters"
+        />
+        <datalist id="pelican-model-options">
+          <option v-for="model in knownModels" :key="model" :value="model" />
+        </datalist>
+        <Select
+          v-model="effortFilter"
+          :options="effortOptions"
+          :placeholder="t('pelican.filters.allEfforts')"
+          clearable
+          :aria-label="t('pelican.filters.effort')"
+          @change="applyFilters"
+        />
+        <button type="button" class="btn btn-secondary btn-sm" @click="resetFilters">
+          {{ t('pelican.filters.reset') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm hidden md:inline-flex"
+          :aria-pressed="listMode"
+          @click="listMode = !listMode"
+        >
+          {{ t(listMode ? 'pelican.gallery.gridView' : 'pelican.gallery.listView') }}
+        </button>
+      </form>
+
+      <div
+        class="flex shrink-0 flex-wrap items-center justify-between gap-1 text-xs text-gray-500 dark:text-dark-300"
+      >
+        <span>{{ t('pelican.gallery.latestPerGroup') }}</span>
+        <div class="flex gap-2" :aria-label="t('pelican.stats.title')">
+          <span v-for="stat in statCards" :key="stat.state" class="inline-flex items-center gap-1">
+            <i class="h-1.5 w-1.5 rounded-full" :class="stat.dotClass"></i>
+            {{ stat.label }} {{ stat.value }}
+          </span>
+        </div>
+      </div>
+      <p v-if="error" role="alert" class="shrink-0 text-sm text-rose-600 dark:text-rose-300">
         {{ error }}
       </p>
-
       <section
-        v-if="loading && !data"
-        class="grid gap-5 md:grid-cols-2 xl:grid-cols-3"
-        :aria-label="t('common.loading')"
+        ref="gallery"
+        class="pelican-gallery min-h-0 flex-1"
+        :class="{ 'pelican-gallery-compact': layout.compact }"
+        :style="{
+          '--pelican-columns': layout.columns,
+          '--pelican-rows': layout.rows
+        }"
+        :aria-label="t('pelican.gallery.title')"
+        :aria-busy="loading"
       >
-        <div
-          v-for="index in 6"
-          :key="index"
-          class="overflow-hidden rounded-3xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
-        >
-          <div class="aspect-[4/3] animate-pulse bg-gray-100 dark:bg-dark-700"></div>
-          <div class="space-y-3 p-5">
-            <div class="h-4 w-1/2 animate-pulse rounded bg-gray-100 dark:bg-dark-700"></div>
-            <div class="h-6 w-4/5 animate-pulse rounded bg-gray-100 dark:bg-dark-700"></div>
-            <div class="h-10 animate-pulse rounded bg-gray-100 dark:bg-dark-700"></div>
-          </div>
-        </div>
-      </section>
-
-      <section v-else-if="data?.items.length" class="space-y-5">
-        <div class="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="text-xl font-bold text-gray-950 dark:text-white">{{ t('pelican.gallery.title') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ t('pelican.gallery.description') }}</p>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-dark-300">
-            {{ t('pelican.gallery.count', { count: data.total }) }}
-          </p>
-        </div>
-        <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <template v-if="loading && !data">
+          <div
+            v-for="index in layout.pageSize"
+            :key="index"
+            class="animate-pulse rounded-xl border border-gray-200 bg-gray-100 dark:border-dark-700 dark:bg-dark-800"
+          ></div>
+        </template>
+        <template v-else-if="data?.items.length">
           <PelicanTestCard
             v-for="run in data.items"
             :key="run.id"
             :run="run"
             :selected="selectedForCompare.includes(run.id)"
             :comparison-full="selectedForCompare.length >= 2"
+            :compact="layout.compact"
             @detail="openDetail"
             @toggle-compare="toggleCompare"
+            @history="historyRun = run"
           />
-        </div>
-        <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800">
-          <Pagination
-            :page="data.page"
-            :total="data.total"
-            :page-size="data.page_size"
-            :show-page-size-selector="false"
-            @update:page="changePage"
-          />
-        </div>
-      </section>
-
-      <section
-        v-else-if="data"
-        class="rounded-3xl border border-dashed border-gray-300 bg-white px-6 py-14 text-center dark:border-dark-600 dark:bg-dark-800"
-      >
-        <Icon name="inbox" size="xl" class="mx-auto text-gray-300 dark:text-dark-500" />
-        <h2 class="mt-3 text-lg font-bold text-gray-900 dark:text-white">{{ t('pelican.empty.title') }}</h2>
-        <p class="mx-auto mt-2 max-w-lg text-sm leading-6 text-gray-500 dark:text-dark-300">
-          {{ t('pelican.empty.description') }}
-        </p>
-      </section>
-
-      <section class="rounded-3xl border border-amber-200 bg-amber-50/80 p-5 dark:border-amber-900/60 dark:bg-amber-950/20">
-        <div class="flex items-start gap-3">
-          <Icon name="infoCircle" size="md" class="mt-0.5 shrink-0 text-amber-600 dark:text-amber-300" />
-          <div>
-            <h2 class="text-sm font-bold text-amber-950 dark:text-amber-100">{{ t('pelican.disclosureTitle') }}</h2>
-            <p class="mt-1 text-sm leading-6 text-amber-800 dark:text-amber-200">
-              {{ t('pelican.disclosure') }}
-            </p>
-          </div>
+        </template>
+        <div
+          v-else-if="data"
+          class="col-span-full flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 p-4 text-center dark:border-dark-600"
+        >
+          <h2 class="font-semibold text-gray-900 dark:text-white">
+            {{ t('pelican.empty.title') }}
+          </h2>
+          <p class="mt-2 text-sm text-gray-500 dark:text-dark-300">
+            {{ t('pelican.empty.description') }}
+          </p>
         </div>
       </section>
-
-      <div
-        v-if="selectedForCompare.length"
-        class="sticky bottom-4 z-20 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-200 bg-white/95 p-3 shadow-xl backdrop-blur dark:border-primary-900 dark:bg-dark-800/95"
-      >
-        <p class="px-1 text-sm text-gray-700 dark:text-dark-100">
-          {{ t('pelican.compare.selectedCount', { count: selectedForCompare.length }) }}
-        </p>
-        <div class="flex gap-2">
-          <button type="button" class="btn btn-secondary" @click="selectedForCompare = []">
-            {{ t('pelican.actions.clear') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="selectedForCompare.length !== 2"
-            @click="compareOpen = true"
-          >
-            {{ t('pelican.actions.compare') }}
-          </button>
-        </div>
-      </div>
-
-      <PelicanDetailDialog
-        :show="detailOpen"
-        :run-id="detailRunId"
-        @close="detailOpen = false"
+      <PelicanCompactPager
+        v-if="data"
+        class="shrink-0"
+        :page="data.page"
+        :total="data.total"
+        :page-size="data.page_size"
+        @update:page="changePage"
       />
+      <PelicanRulesDialog
+        :show="rulesOpen"
+        :prompt="data?.prompt"
+        :prompt-version="data?.prompt_version"
+        @close="rulesOpen = false"
+      />
+      <PelicanHistoryDialog
+        :show="!!historyRun"
+        :group-id="historyRun?.group_id ?? null"
+        :group-name="historyRun?.group_name || ''"
+        :model="appliedModel"
+        :effort="appliedEffort"
+        @close="historyRun = null"
+        @detail="openDetail"
+      />
+      <PelicanDetailDialog :show="detailOpen" :run-id="detailRunId" @close="detailOpen = false" />
       <PelicanCompareDialog
         :show="compareOpen"
         :ids="selectedForCompare"
@@ -198,25 +164,32 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
-import Pagination from '@/components/common/Pagination.vue'
+import PelicanCompactPager from '@/components/pelican/PelicanCompactPager.vue'
+import PelicanRulesDialog from '@/components/pelican/PelicanRulesDialog.vue'
+import PelicanHistoryDialog from '@/components/pelican/PelicanHistoryDialog.vue'
+import { usePelicanGalleryLayout } from '@/components/pelican/usePelicanGalleryLayout'
 import PelicanTestCard from '@/components/pelican/PelicanTestCard.vue'
 import PelicanDetailDialog from '@/components/pelican/PelicanDetailDialog.vue'
 import PelicanCompareDialog from '@/components/pelican/PelicanCompareDialog.vue'
 import { togglePelicanComparison } from '@/components/pelican/compareSelection'
 import { getPelicanResults } from '@/api/pelican'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import type {
-  PelicanEffort,
-  PelicanPublicPage,
-} from '@/types/pelican'
+import type { PelicanEffort, PelicanPublicPage, PelicanPublicRun } from '@/types/pelican'
 
 const { t } = useI18n()
+const gallery = ref<HTMLElement | null>(null)
+const listMode = ref(false)
+const layout = usePelicanGalleryLayout(gallery, listMode)
+const rulesOpen = ref(false)
+const historyRun = ref<PelicanPublicRun | null>(null)
+const appliedModel = ref('')
+const appliedEffort = ref<PelicanEffort | null>(null)
 const data = ref<PelicanPublicPage | null>(null)
+const availableGroups = ref<PelicanPublicPage['groups']>([])
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
@@ -233,7 +206,10 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollAttempts = 0
 
 const groupOptions = computed(() => [
-  ...(data.value?.groups || []).map((group) => ({ value: group.id, label: group.name })),
+  ...availableGroups.value.map((group) => ({
+    value: group.id,
+    label: group.name
+  }))
 ])
 const effortOptions = [
   { value: 'none', label: 'none' },
@@ -242,13 +218,33 @@ const effortOptions = [
   { value: 'medium', label: 'medium' },
   { value: 'high', label: 'high' },
   { value: 'xhigh', label: 'xhigh' },
-  { value: 'max', label: 'max' },
+  { value: 'max', label: 'max' }
 ]
 const statCards = computed(() => [
-  { state: 'completed' as const, label: t('pelican.state.completed'), value: data.value?.stats.completed || 0, dotClass: 'bg-emerald-500' },
-  { state: 'failed' as const, label: t('pelican.state.failed'), value: data.value?.stats.failed || 0, dotClass: 'bg-rose-500' },
-  { state: 'unknown' as const, label: t('pelican.state.unknown'), value: data.value?.stats.unknown || 0, dotClass: 'bg-amber-500' },
-  { state: 'running' as const, label: t('pelican.state.running'), value: data.value?.stats.running || 0, dotClass: 'bg-sky-500' },
+  {
+    state: 'completed' as const,
+    label: t('pelican.state.completed'),
+    value: data.value?.stats.completed || 0,
+    dotClass: 'bg-emerald-500'
+  },
+  {
+    state: 'failed' as const,
+    label: t('pelican.state.failed'),
+    value: data.value?.stats.failed || 0,
+    dotClass: 'bg-rose-500'
+  },
+  {
+    state: 'unknown' as const,
+    label: t('pelican.state.unknown'),
+    value: data.value?.stats.unknown || 0,
+    dotClass: 'bg-amber-500'
+  },
+  {
+    state: 'running' as const,
+    label: t('pelican.state.running'),
+    value: data.value?.stats.running || 0,
+    dotClass: 'bg-sky-500'
+  }
 ])
 
 function recordModels(items: { model: string }[]) {
@@ -266,11 +262,8 @@ function clearPoll() {
 
 function schedulePoll() {
   clearPoll()
-  if (
-    document.visibilityState !== 'visible'
-    || !data.value?.stats.running
-    || pollAttempts >= 60
-  ) return
+  if (document.visibilityState !== 'visible' || !data.value?.stats.running || pollAttempts >= 60)
+    return
   pollTimer = setTimeout(async () => {
     pollAttempts += 1
     await loadResults(true)
@@ -278,10 +271,15 @@ function schedulePoll() {
 }
 
 async function loadResults(background = false) {
+  clearPoll()
   controller?.abort()
   const current = new AbortController()
   controller = current
   if (!background) {
+    data.value = null
+    historyRun.value = null
+    selectedForCompare.value = []
+    compareOpen.value = false
     loading.value = true
     error.value = ''
   }
@@ -289,15 +287,29 @@ async function loadResults(background = false) {
     const result = await getPelicanResults(
       {
         page: page.value,
-        page_size: 12,
+        page_size: layout.value.pageSize,
+        latest_per_group: true,
         ...(groupFilter.value ? { group_id: groupFilter.value } : {}),
-        ...(modelFilter.value.trim() ? { model: modelFilter.value.trim() } : {}),
-        ...(effortFilter.value ? { effort: effortFilter.value } : {}),
+        ...(appliedModel.value ? { model: appliedModel.value } : {}),
+        ...(appliedEffort.value ? { effort: appliedEffort.value } : {})
       },
-      { signal: current.signal },
+      { signal: current.signal }
     )
     if (current.signal.aborted) return
+    const lastPage = Math.max(1, result.pages)
+    if (page.value > lastPage) {
+      page.value = lastPage
+      await loadResults()
+      return
+    }
     data.value = result
+    availableGroups.value = result.groups
+    error.value = ''
+    const completedIds = new Set(
+      result.items.filter((run) => run.state === 'completed').map((run) => run.id)
+    )
+    selectedForCompare.value = selectedForCompare.value.filter((id) => completedIds.has(id))
+    if (selectedForCompare.value.length !== 2) compareOpen.value = false
     recordModels(result.items)
   } catch (cause) {
     if (!current.signal.aborted) error.value = extractApiErrorMessage(cause, t('common.error'))
@@ -310,6 +322,8 @@ async function loadResults(background = false) {
 }
 
 function applyFilters() {
+  appliedModel.value = modelFilter.value.trim()
+  appliedEffort.value = effortFilter.value
   page.value = 1
   pollAttempts = 0
   void loadResults()
@@ -326,8 +340,15 @@ function changePage(nextPage: number) {
   page.value = nextPage
   pollAttempts = 0
   void loadResults()
-  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
+
+watch(
+  () => [layout.value.pageSize, listMode.value],
+  () => {
+    page.value = 1
+    void loadResults()
+  }
+)
 
 function openDetail(id: string) {
   detailRunId.value = id
@@ -335,6 +356,7 @@ function openDetail(id: string) {
 }
 
 function toggleCompare(id: string) {
+  if (!data.value?.items.some((run) => run.id === id && run.state === 'completed')) return
   selectedForCompare.value = togglePelicanComparison(selectedForCompare.value, id)
 }
 
@@ -354,3 +376,31 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
+
+<style scoped>
+.pelican-gallery {
+  display: grid;
+  grid-template-columns: repeat(var(--pelican-columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--pelican-rows), minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pelican-filters :deep(.input),
+.pelican-filters > .input {
+  min-height: 36px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .pelican-page {
+    gap: 8px;
+  }
+  .pelican-gallery {
+    gap: 8px;
+  }
+  .pelican-filters > input {
+    font-size: 16px;
+  }
+}
+</style>
