@@ -54,10 +54,10 @@ func TestPelicanRouteAuditRealGroupNetwork(t *testing.T) {
 					w.Header().Set("Content-Type", "text/event-stream")
 					if protocol == "chat" {
 						event, _ := json.Marshal(map[string]any{"id": "chatcmpl_fixture", "model": "gpt-5.4", "choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": "<html><body>pelican</body></html>"}, "finish_reason": "stop"}}})
-						fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", event)
+						fmt.Fprintf(w, "data: %s\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":10,\"prompt_tokens_details\":{\"cached_tokens\":10}}}\n\ndata: [DONE]\n\n", event)
 						return
 					}
-					event, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_fixture", "status": "completed", "output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": "<html><body>pelican</body></html>"}}}}, "usage": map[string]int{"input_tokens": 20, "output_tokens": 10}}})
+					event, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_fixture", "status": "completed", "output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": "<html><body>pelican</body></html>"}}}}, "usage": map[string]any{"input_tokens": 20, "output_tokens": 10, "input_tokens_details": map[string]int{"cached_tokens": 10}}}})
 					fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", event)
 				}))
 				defer server.Close()
@@ -115,6 +115,10 @@ func TestPelicanRouteAuditRealGroupNetwork(t *testing.T) {
 				}
 				require.Equal(t, "completed", run.State, run.Error)
 				require.Contains(t, run.Output, "<html>")
+				expectedCost, costErr := billing.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 10, CacheReadTokens: 10, OutputTokens: 10}, 1)
+				require.NoError(t, costErr)
+				require.NotNil(t, run.CostUSD)
+				require.InDelta(t, expectedCost.TotalCost, *run.CostUSD, 1e-10, "cached input must not be charged twice in the observation estimate")
 				require.Contains(t, acquired, int64(772))
 				require.Equal(t, []int64{772}, released)
 				require.NotNil(t, run.Timing)

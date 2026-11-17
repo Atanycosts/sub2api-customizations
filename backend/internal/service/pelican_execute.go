@@ -234,7 +234,7 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 		if err == nil && run.State == "completed" {
 			s.gateway.ReportOpenAIAccountScheduleResult(account, model, true, result.FirstTokenMs)
 		}
-		tokens := UsageTokens{InputTokens: result.Usage.InputTokens, OutputTokens: result.Usage.OutputTokens, CacheReadTokens: result.Usage.CacheReadInputTokens, CacheCreationTokens: result.Usage.CacheCreationInputTokens}
+		tokens := UsageTokens{InputTokens: max(0, result.Usage.InputTokens-result.Usage.CacheReadInputTokens-result.Usage.CacheCreationInputTokens), OutputTokens: result.Usage.OutputTokens, CacheReadTokens: result.Usage.CacheReadInputTokens, CacheCreationTokens: result.Usage.CacheCreationInputTokens}
 		if result.Usage.InputTokens+result.Usage.OutputTokens > 0 {
 			cost, costErr := s.billing.CalculateCost(run.UpstreamModel, tokens, 1)
 			if costErr == nil {
