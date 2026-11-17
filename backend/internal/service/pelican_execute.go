@@ -145,8 +145,18 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 		run.Error = "selected account cannot guarantee the explicit output token cap"
 		return
 	}
-	estimated, e := s.billing.GetEstimatedCost(account.GetMappedModel(model), len([]byte(run.Prompt))*2+1024, run.MaxOutputTokens)
-	if e != nil || estimated <= 0 || estimated > run.ReservedUSD {
+	if s.gateway.settingService != nil {
+		if settings, e := s.gateway.settingService.GetOpenAIFastPolicySettings(ctx); e == nil && settings != nil {
+			ctx = withOpenAIFastPolicyContext(ctx, settings)
+		}
+	}
+	policyBody, e := s.gateway.applyOpenAIFastPolicyToBody(ctx, account, normalizeOpenAIModelForUpstream(account, account.GetMappedModel(model)), body)
+	if e != nil {
+		run.Error = e.Error()
+		return
+	}
+	estimated, e := s.billing.CalculateCostWithServiceTier(account.GetMappedModel(model), UsageTokens{InputTokens: len([]byte(run.Prompt))*2 + 1024, OutputTokens: run.MaxOutputTokens}, 1, gjson.GetBytes(policyBody, "service_tier").String())
+	if e != nil || estimated.TotalCost <= 0 || estimated.TotalCost > run.ReservedUSD {
 		run.Error = "mapped model price unavailable or maximum estimate exceeds reservation"
 		return
 	}
@@ -236,7 +246,11 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 		}
 		tokens := UsageTokens{InputTokens: max(0, result.Usage.InputTokens-result.Usage.CacheReadInputTokens-result.Usage.CacheCreationInputTokens), OutputTokens: result.Usage.OutputTokens, CacheReadTokens: result.Usage.CacheReadInputTokens, CacheCreationTokens: result.Usage.CacheCreationInputTokens}
 		if result.Usage.InputTokens+result.Usage.OutputTokens > 0 {
-			cost, costErr := s.billing.CalculateCost(run.UpstreamModel, tokens, 1)
+			tier := ""
+			if result.ServiceTier != nil {
+				tier = *result.ServiceTier
+			}
+			cost, costErr := s.billing.CalculateCostWithServiceTier(run.UpstreamModel, tokens, 1, tier)
 			if costErr == nil {
 				run.CostUSD = &cost.TotalCost
 			}

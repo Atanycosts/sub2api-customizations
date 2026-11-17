@@ -55,3 +55,38 @@ func TestOpenAIOutputCapRequiredAllowsOtherExplicitCompatibilityRepair(t *testin
 	require.Equal(t, int64(128), gjson.GetBytes(upstream.bodies[1], "max_output_tokens").Int())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "truncation").Exists())
 }
+
+func TestOpenAIOutputCapRequiredKeepsExplicitCapAcrossChatBridge(t *testing.T) {
+	for _, required := range []bool{false, true} {
+		name := "ordinary request keeps configured floor"
+		if required {
+			name = "internal bounded request keeps explicit cap"
+		}
+		t.Run(name, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}],"stream":false,"max_completion_tokens":64}`)
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				newOpenAIRejectedFieldTestResponse(http.StatusOK, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_cap\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\ndata: [DONE]\n\n"),
+			}}
+			upstream.responses[0].Header.Set("Content-Type", "text/event-stream")
+			account := structuredInputRetryTestAccount()
+			c := newOpenAIRejectedFieldTestContext(body)
+			ctx := context.Background()
+			if required {
+				ctx = WithOpenAIOutputCapRequired(ctx)
+			}
+			c.Request = c.Request.WithContext(ctx)
+			svc := &OpenAIGatewayService{cfg: structuredInputRetryTestConfig(), httpUpstream: upstream}
+			svc.cfg.Gateway.MinOutputTokens = 512
+			result, err := svc.ForwardAsChatCompletions(ctx, c, account, body, "", "")
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.requests, 1)
+			require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+			want := int64(512)
+			if required {
+				want = 64
+			}
+			require.Equal(t, want, gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int())
+		})
+	}
+}
