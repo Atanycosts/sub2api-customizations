@@ -865,10 +865,17 @@ func ProvideGatewayOperationsService(repo GatewayOperationsRepository, encryptor
 	return s
 }
 
+func ProvidePelicanService(repo PelicanRepository, groups GroupRepository, keys *APIKeyService, gateway *OpenAIGatewayService, billing *BillingService, concurrency *ConcurrencyService) *PelicanService {
+	s := NewPelicanService(repo, groups, keys, gateway, billing, concurrency)
+	s.Start()
+	return s
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	NewRequestTimingService,
 	ProvideGatewayOperationsService,
+	ProvidePelicanService,
 	ProvideMemoryGateway,
 	// Core services
 	ProvideAuthService,

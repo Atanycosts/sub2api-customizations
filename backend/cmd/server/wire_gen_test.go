@@ -55,6 +55,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // memoryGateway
 		nil, // requestTiming
 		nil, // gatewayOperations
+		nil, // pelican
 		nil, // entClient
 		nil, // redis
 		&service.OpsMetricsCollector{},

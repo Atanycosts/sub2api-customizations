@@ -89,6 +89,7 @@ func RegisterAdminRoutes(
 		admin.GET("/request-timings", h.Admin.RequestTiming.List)
 		admin.GET("/request-timings/:trace_id", h.Admin.RequestTiming.Get)
 		h.Admin.GatewayOperations.RegisterRoutes(admin)
+		h.Pelican.RegisterAdminRoutes(admin)
 
 		// 系统管理
 		registerSystemRoutes(admin, h)

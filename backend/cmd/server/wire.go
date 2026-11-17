@@ -86,6 +86,7 @@ func provideCleanup(
 	memoryGateway *service.MemoryGateway,
 	requestTiming *service.RequestTimingService,
 	gatewayOperations *service.GatewayOperationsService,
+	pelican *service.PelicanService,
 	entClient *ent.Client,
 	rdb *redis.Client,
 	opsMetricsCollector *service.OpsMetricsCollector,
@@ -462,6 +463,9 @@ func provideCleanup(
 		// Drain their dependencies in that order before closing SQL/Redis.
 		if gatewayOperations != nil {
 			gatewayOperations.Stop()
+		}
+		if pelican != nil {
+			pelican.Stop()
 		}
 		if usageRecordWorkerPool != nil {
 			usageRecordWorkerPool.Stop()

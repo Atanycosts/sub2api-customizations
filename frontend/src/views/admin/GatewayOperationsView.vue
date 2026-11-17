@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
       <h1 class="text-2xl font-bold">网关运维观察</h1>
-      <p class="text-sm text-gray-500">手动查看供应商钱包、固定账号实验与缓存账单。所有实验均保留失败与未知结果，产物由人工判断。</p>
+      <p class="text-sm text-gray-500">手动查看供应商钱包、固定账号直测与缓存账单。所有直测均保留失败与未知结果，产物由人工判断。</p>
       <p v-if="error" role="alert" class="rounded bg-red-50 p-3 text-red-700">{{ error }}</p>
       <section class="space-y-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-dark-800">
         <h2 class="text-lg font-semibold">执行设置</h2>
@@ -22,13 +22,16 @@
         <div class="flex gap-2"><button class="btn btn-secondary" :disabled="walletOffset === 0 || busy" @click="pageWallets(-50)">上一页</button><span>{{ walletOffset + 1 }} 起</span><button class="btn btn-secondary" :disabled="wallets.length < 50 || busy" @click="pageWallets(50)">下一页</button></div>
       </section>
       <section class="space-y-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-dark-800">
-        <h2 class="text-lg font-semibold">手动固定账号实验 / 鹈鹕</h2>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <h2 class="text-lg font-semibold">固定账号直测</h2>
+          <router-link to="/admin/pelican-tests" class="btn btn-secondary">进入鹈鹕分组实测管理</router-link>
+        </div>
         <p class="text-sm text-gray-500">当前支持直接配置的 OpenAI 兼容 APIKey 账号。协议对应实际 /v1/chat/completions 或 /v1/responses，单提交执行一次，不自动换号或重试。输入与模型映射冻结在记录中。</p>
         <p class="text-sm text-gray-500">上游流式接收，完成后保存产物。每条记录展示实际接收方式；这是固定账号与参数下的生成观察，耗时包含网络、排队、推理和生成。</p>
         <form class="grid gap-3 md:grid-cols-3" @submit.prevent="runExperiment">
-          <label>题目<select v-model="experiment.kind" class="input"><option value="pelican">鹈鹕骑自行车 · v1</option><option value="experiment">自定义受控实验</option></select></label><label>固定账号 ID<input v-model.number="experiment.account_id" required type="number" min="1" class="input" /></label><label>模型<input v-model="experiment.model" required class="input" /></label>
+          <label>固定账号 ID<input v-model.number="experiment.account_id" required type="number" min="1" class="input" /></label><label>模型<input v-model="experiment.model" required class="input" /></label>
           <label>真实协议<select v-model="experiment.protocol" class="input"><option value="chat">Chat</option><option value="responses">Responses</option></select></label><label>Effort<select v-model="experiment.effort" class="input"><option value="">未指定</option><option v-for="effort in ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']" :key="effort">{{ effort }}</option></select></label><label>最大输出 Token<input v-model.number="experiment.max_output_tokens" type="number" min="64" max="16384" required class="input" /></label>
-          <label>此次预留预算（USD）<input v-model.number="experiment.budget_usd" type="number" min="0.000001" max="100" step="any" required class="input" /></label><label v-if="experiment.kind === 'experiment'">题目版本<input v-model="experiment.prompt_version" required class="input" /></label><label v-if="experiment.kind === 'experiment'" class="md:col-span-3">题目<textarea v-model="experiment.prompt" rows="5" required maxlength="65536" class="input" /></label>
+          <label>此次预留预算（USD）<input v-model.number="experiment.budget_usd" type="number" min="0.000001" max="100" step="any" required class="input" /></label><label>题目版本<input v-model="experiment.prompt_version" required class="input" /></label><label class="md:col-span-3">题目<textarea v-model="experiment.prompt" rows="5" required maxlength="65536" class="input" /></label>
           <label class="md:col-span-3"><input v-model="experimentConfirmed" type="checkbox" /> 我确认以当前账号执行真实付费提交，并预留上述预算</label><button class="btn btn-primary" :disabled="busy || !experimentConfirmed">{{ busy ? '处理中…' : '单次提交并保存观察记录' }}</button>
         </form>
         <div v-for="run in experiments" :key="run.id" class="space-y-2 rounded border p-3"><div class="flex flex-wrap justify-between gap-2"><strong>{{ run.frozen.kind }} · {{ run.state }} · {{ date(run.created_at) }}</strong><span>账号 #{{ run.frozen.account_id }} · {{ run.upstream_model }} · {{ run.frozen.effort || '未指定 effort' }}</span></div><div class="break-all text-sm">{{ run.id }} · {{ run.endpoint }} · {{ run.transport === 'sse' ? '流式接收' : 'JSON 接收' }} · {{ run.duration_ms }} ms · HTTP {{ run.http_status }} · 成本 {{ run.cost_usd == null ? '未知' : `$${run.cost_usd}` }} · 预留 ${{ run.reserved_usd }} · 题目 {{ run.frozen.prompt_version }}</div><p v-if="run.error" class="text-red-600">{{ run.error }}</p><details><summary class="cursor-pointer">冻结输入与用量</summary><pre class="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{{ JSON.stringify({ frozen: run.frozen, transport: run.transport || 'json', usage: run.usage, terminal: run.terminal, raw_response: run.raw_response }, null, 2) }}</pre></details><ObservationPreview v-if="run.output" :source="run.output" :id="run.id" /></div>
@@ -54,7 +57,7 @@ const config = reactive<OperationsConfig>({ worker_enabled: false, refresh_minut
 const wallets = ref<OperationsWallet[]>([]), experiments = ref<OperationsExperiment[]>([])
 const emptyWallet = (): OperationsWalletInput => ({ name: '', provider: 'sub2api', base_url: '', remote_user_id: '', account_ids: [], credential_value: '', currency: 'USD', threshold: null, notify_email: '' })
 const walletForm = reactive(emptyWallet())
-const experiment = reactive<OperationsExperimentInput>({ submit_id: operationsUUID(), kind: 'pelican', account_id: 0, model: '', effort: '', protocol: 'chat', prompt: '', prompt_version: 'custom-v1', max_output_tokens: 4096, budget_usd: 1 })
+const experiment = reactive<OperationsExperimentInput>({ submit_id: operationsUUID(), kind: 'experiment', account_id: 0, model: '', effort: '', protocol: 'chat', prompt: '', prompt_version: 'custom-v1', max_output_tokens: 4096, budget_usd: 1 })
 function date(value: string | null) { return value ? new Date(value).toLocaleString() : '未刷新' }
 async function act(fn: () => Promise<void>) { busy.value = true; error.value = ''; try { await fn() } catch (e) { error.value = e instanceof Error ? e.message : String(e) } finally { busy.value = false } }
 async function loadWallets() { wallets.value = await api.wallets(walletOffset.value) }

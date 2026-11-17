@@ -187,6 +187,8 @@ export default {
     channels: 'Channels',
     availableChannels: 'Available Channels',
     modelPlaza: 'Model Plaza',
+    pelican: 'Pelican Gallery',
+    pelicanTests: 'Pelican Tests',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     plugins: 'Plugins',

@@ -20,6 +20,8 @@ FRONTEND_CRITICAL_VITEST := \
 	src/components/admin/user/__tests__/UserPlatformQuotaModal.spec.ts \
 	src/views/user/__tests__/KeysView.spec.ts \
 	src/api/__tests__/channelMonitorV2.spec.ts \
+	src/api/__tests__/pelican.spec.ts \
+	src/components/pelican/__tests__/compareSelection.spec.ts \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
 	src/views/auth/__tests__/WechatCallbackView.spec.ts \
 	src/views/user/__tests__/PaymentView.spec.ts \
@@ -35,6 +37,7 @@ FRONTEND_CRITICAL_VITEST := \
 	src/views/admin/ops/components/__tests__/OpsRequestDetailsModal.spec.ts \
 	src/utils/__tests__/magpieImport.spec.ts \
 	src/utils/__tests__/operationsPreview.spec.ts \
+	src/utils/__tests__/operationsPreview.static.spec.ts \
 	src/utils/__tests__/operationsUUID.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \

@@ -589,12 +589,24 @@ func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Cont
 	if !stream {
 		return ctx, func() {}
 	}
-	return pkghttputil.DetachUpstreamContext(ctx), func() {}
+	return detachUpstreamContext(ctx)
+}
+
+type upstreamHardDeadlineContextKey struct{}
+
+// WithUpstreamHardDeadline preserves the caller's execution timeout and
+// cancellation through forwarding. Internal jobs own their budget and do not
+// need to drain usage after that budget expires. The caller owns cancellation.
+func WithUpstreamHardDeadline(ctx context.Context) context.Context {
+	return context.WithValue(ctx, upstreamHardDeadlineContextKey{}, true)
 }
 
 func detachUpstreamContext(ctx context.Context, drainTimeout ...time.Duration) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		return context.Background(), func() {}
+	}
+	if hard, _ := ctx.Value(upstreamHardDeadlineContextKey{}).(bool); hard {
+		return ctx, func() {}
 	}
 	return pkghttputil.DetachUpstreamContext(ctx, drainTimeout...), func() {}
 }
