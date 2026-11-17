@@ -88,13 +88,13 @@ func (s *GatewayOperationsService) RunExperiment(ctx context.Context, userID int
 	}
 	base = strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1")
 	endpoint := "/v1/responses"
-	payload := map[string]any{"model": model, "input": in.Prompt, "max_output_tokens": in.MaxOutputTokens, "stream": false, "store": false}
+	payload := map[string]any{"model": model, "input": in.Prompt, "max_output_tokens": in.MaxOutputTokens, "stream": true, "store": false}
 	if in.Effort != "" {
 		payload["reasoning"] = map[string]string{"effort": in.Effort}
 	}
 	if in.Protocol == "chat" {
 		endpoint = "/v1/chat/completions"
-		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": in.Prompt}}, "max_completion_tokens": in.MaxOutputTokens, "stream": false}
+		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": in.Prompt}}, "max_completion_tokens": in.MaxOutputTokens, "stream": true, "stream_options": map[string]bool{"include_usage": true}}
 		if in.Effort != "" {
 			payload["reasoning_effort"] = in.Effort
 		}
@@ -103,7 +103,7 @@ func (s *GatewayOperationsService) RunExperiment(ctx context.Context, userID int
 	if err != nil {
 		return nil, err
 	}
-	run := &GatewayExperiment{ID: in.SubmitID, CreatedAt: time.Now().UTC(), RequestedBy: userID, Frozen: in, UpstreamModel: model, Endpoint: endpoint, State: "running", ReservedUSD: in.BudgetUSD}
+	run := &GatewayExperiment{ID: in.SubmitID, CreatedAt: time.Now().UTC(), RequestedBy: userID, Frozen: in, Transport: "sse", UpstreamModel: model, Endpoint: endpoint, State: "running", ReservedUSD: in.BudgetUSD}
 	if err = s.repo.CreateExperiment(ctx, run); err != nil {
 		if errors.Is(err, ErrGatewayExperimentExists) {
 			return s.repo.Experiment(ctx, in.SubmitID, userID)
@@ -134,7 +134,7 @@ func (s *GatewayOperationsService) RunExperiment(ctx context.Context, userID int
 	}
 	req.Header.Set("Authorization", "Bearer "+account.GetOpenAIProtocolAPIKey())
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("X-Request-ID", run.ID)
 	account.ApplyHeaderOverrides(req.Header)
 	proxyURL := ""
@@ -147,39 +147,48 @@ func (s *GatewayOperationsService) RunExperiment(ctx context.Context, userID int
 		run.Error = "upstream execution outcome unknown; no automatic retry"
 	} else {
 		run.HTTPStatus = resp.StatusCode
-		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20+1))
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, gatewayExperimentResponseLimit+1))
 		_ = resp.Body.Close()
-		if readErr != nil || len(data) > 2<<20 {
+		truncated := len(data) > gatewayExperimentResponseLimit
+		if readErr != nil || truncated {
 			run.Error = "upstream result incomplete or exceeded 2 MiB; execution outcome unknown"
-		} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			run.State = "failed"
-			run.Error = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
-		} else if !gjson.ValidBytes(data) {
-			run.Error = "invalid upstream JSON; execution outcome unknown"
-		} else {
-			run.RawResponse = json.RawMessage(data)
-			run.Output = gatewayExperimentOutput(in.Protocol, data)
-			if in.Protocol == "chat" {
-				run.Terminal = gjson.GetBytes(data, "choices.0.finish_reason").String()
-			} else {
-				run.Terminal = gjson.GetBytes(data, "status").String()
+			run.Transport = gatewayExperimentRawTransport(resp.Header.Get("Content-Type"), data)
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				if truncated {
+					data = data[:gatewayExperimentResponseLimit]
+				}
+				run.RawResponse = gatewayExperimentRawBody(run.Transport, data, false, truncated, readErr != nil)
 			}
-			usage := gjson.GetBytes(data, "usage")
-			if usage.Exists() {
-				run.Usage = json.RawMessage(usage.Raw)
-				if tokens, known := gatewayExperimentTokens(in.Protocol, usage); known {
+		} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == 524 || resp.StatusCode >= 500 {
+				run.Error = fmt.Sprintf("upstream HTTP %d; remote execution and billing outcome unknown; no automatic retry", resp.StatusCode)
+			} else {
+				run.State = "failed"
+				run.Error = fmt.Sprintf("upstream HTTP %d", resp.StatusCode)
+			}
+		} else {
+			var aggregate gatewayExperimentAggregate
+			if gjson.ValidBytes(data) {
+				run.Transport = "json"
+				run.RawResponse = json.RawMessage(append([]byte(nil), data...))
+				aggregate = gatewayExperimentParseJSON(in.Protocol, data)
+			} else {
+				run.Transport = gatewayExperimentRawTransport(resp.Header.Get("Content-Type"), data)
+				run.RawResponse = gatewayExperimentRawBody(run.Transport, data, true, false, false)
+				aggregate = gatewayExperimentParseSSE(in.Protocol, data)
+			}
+			run.Output = aggregate.Output
+			run.Terminal = aggregate.Terminal
+			run.State = aggregate.State
+			run.Error = aggregate.Error
+			run.Usage = aggregate.Usage
+			if run.State == "completed" && len(run.Usage) > 0 {
+				if tokens, known := gatewayExperimentTokens(in.Protocol, gjson.ParseBytes(run.Usage)); known {
 					cost, costErr := s.billing.CalculateCost(model, tokens, 1)
 					if costErr == nil {
 						run.CostUSD = &cost.TotalCost
 					}
 				}
-			}
-			if in.Protocol == "responses" && gjson.GetBytes(data, "status").String() != "completed" {
-				run.Error = "Responses terminal status was not completed"
-			} else if in.Protocol == "chat" && gjson.GetBytes(data, "choices.0.finish_reason").String() != "stop" {
-				run.Error = "Chat terminal finish_reason was not stop"
-			} else {
-				run.State = "completed"
 			}
 		}
 	}

@@ -83,6 +83,7 @@ type GatewayExperiment struct {
 	FinishedAt    *time.Time             `json:"finished_at"`
 	RequestedBy   int64                  `json:"requested_by"`
 	Frozen        GatewayExperimentInput `json:"frozen"`
+	Transport     string                 `json:"transport,omitempty"`
 	UpstreamModel string                 `json:"upstream_model"`
 	Endpoint      string                 `json:"endpoint"`
 	State         string                 `json:"state"`

@@ -20,10 +20,11 @@ import (
 
 type gatewayOpsRepoStub struct {
 	GatewayOperationsRepository
-	run         *GatewayExperiment
-	wallet      *GatewayWallet
-	finished    int
-	configReads atomic.Int64
+	run              *GatewayExperiment
+	wallet           *GatewayWallet
+	finished         int
+	createdTransport string
+	configReads      atomic.Int64
 }
 
 func (r *gatewayOpsRepoStub) Experiment(_ context.Context, id string, userID int64) (*GatewayExperiment, error) {
@@ -35,6 +36,7 @@ func (r *gatewayOpsRepoStub) Experiment(_ context.Context, id string, userID int
 func (r *gatewayOpsRepoStub) CreateExperiment(_ context.Context, e *GatewayExperiment) error {
 	copy := *e
 	r.run = &copy
+	r.createdTransport = e.Transport
 	return nil
 }
 func (r *gatewayOpsRepoStub) FinishExperiment(_ context.Context, e *GatewayExperiment) error {
