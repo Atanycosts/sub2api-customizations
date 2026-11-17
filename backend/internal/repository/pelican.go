@@ -143,7 +143,7 @@ func (r *pelicanRepository) Submit(ctx context.Context, planID, userID int64, id
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET last_run_at=$2,next_run_at=CASE WHEN $3 THEN $2+interval_minutes*INTERVAL '1 minute' ELSE next_run_at END,running_until=$2+INTERVAL '5 minutes' WHERE id=$1`, planID, now, scheduled)
+	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET last_run_at=$2::timestamptz,next_run_at=CASE WHEN $3 THEN $2::timestamptz+interval_minutes*INTERVAL '1 minute' ELSE next_run_at END,running_until=$2::timestamptz+INTERVAL '5 minutes' WHERE id=$1`, planID, now, scheduled)
 	if err != nil {
 		return nil, err
 	}
