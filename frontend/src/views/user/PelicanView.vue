@@ -130,14 +130,15 @@
           </p>
         </div>
       </section>
-      <PelicanCompactPager
-        v-if="data"
-        class="shrink-0"
-        :page="data.page"
-        :total="data.total"
-        :page-size="data.page_size"
-        @update:page="changePage"
-      />
+      <div class="min-h-9 shrink-0">
+        <PelicanCompactPager
+          v-if="data"
+          :page="data.page"
+          :total="data.total"
+          :page-size="data.page_size"
+          @update:page="changePage"
+        />
+      </div>
       <PelicanRulesDialog
         :show="rulesOpen"
         :prompt="data?.prompt"
@@ -343,7 +344,7 @@ function changePage(nextPage: number) {
 }
 
 watch(
-  () => [layout.value.pageSize, listMode.value],
+  [() => layout.value.pageSize, listMode],
   () => {
     page.value = 1
     void loadResults()

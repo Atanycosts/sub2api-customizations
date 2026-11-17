@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { computed, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import PelicanView from '../PelicanView.vue'
 import PelicanHistoryDialog from '@/components/pelican/PelicanHistoryDialog.vue'
 import PelicanTestCard from '@/components/pelican/PelicanTestCard.vue'
@@ -14,13 +14,15 @@ vi.mock('vue-i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-i18n')>()),
   useI18n: () => ({ t: (key: string) => key })
 }))
+const galleryHeight = ref(600)
 vi.mock('@/components/pelican/usePelicanGalleryLayout', () => ({
   usePelicanGalleryLayout: (_element: unknown, listMode: Ref<boolean>) =>
-    computed(() =>
-      listMode.value
+    computed(() => {
+      const rows = galleryHeight.value >= 420 ? 2 : 1
+      return listMode.value
         ? { compact: true, columns: 1, rows: 5, pageSize: 5 }
-        : { compact: false, columns: 4, rows: 2, pageSize: 8 }
-    )
+        : { compact: false, columns: 4, rows, pageSize: 4 * rows }
+    })
 }))
 const run: PelicanPublicRun = {
   id: 'latest-failed',
@@ -76,11 +78,28 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  galleryHeight.value = 600
   api.getPelicanResults.mockReset()
   api.getPelicanResults.mockResolvedValue(result())
 })
 
 describe('compact Pelican gallery', () => {
+  it('keeps one-channel results loaded when container height changes within the same capacity', async () => {
+    api.getPelicanResults.mockResolvedValue({ ...result(), total: 1, pages: 1 })
+    const wrapper = mount(PelicanView, { global: { stubs } })
+    await flushPromises()
+    expect(api.getPelicanResults).toHaveBeenCalledTimes(1)
+
+    galleryHeight.value = 560
+    await flushPromises()
+    galleryHeight.value = 540
+    await flushPromises()
+
+    expect(api.getPelicanResults).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('article').text()).toContain('failed')
+    wrapper.unmount()
+  })
+
   it('requests server-grouped results and keeps the latest failure visible', async () => {
     const wrapper = mount(PelicanView, { global: { stubs } })
     await flushPromises()
