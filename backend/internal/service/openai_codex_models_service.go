@@ -155,6 +155,7 @@ func (s *OpenAIGatewayService) BuildGroupConfiguredCodexModelsManifest(
 		nil,
 		group.ModelAllowlist.Models,
 		group.ModelAllowlistEnabled(),
+		s.codexGPT62Restriction(ctx, group.ID),
 	)
 	if err != nil {
 		return nil, false, fmt.Errorf("build group configured Codex models: %w", err)
@@ -200,6 +201,7 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 		configuredModels,
 		group.ModelAllowlist.Models,
 		group.ModelAllowlistEnabled(),
+		s.codexGPT62Restriction(ctx, group.ID),
 	)
 	if err != nil {
 		return fmt.Errorf("merge group configured Codex models: %w", err)
@@ -225,6 +227,18 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 		manifest.NotModified = true
 	}
 	return nil
+}
+
+// A live upstream manifest can advertise GPT-6.2 before this channel allows it.
+// Apply the same group-level price check as Responses, leaving legacy discovery intact.
+func (s *OpenAIGatewayService) codexGPT62Restriction(ctx context.Context, groupID int64) func(string) bool {
+	return func(model string) bool {
+		if openai.GPT62ModelID(model) == "" {
+			return false
+		}
+		forwardModel := s.ResolveChannelMapping(ctx, groupID, model).MappedModel
+		return s.checkChannelPricingRestriction(ctx, &groupID, forwardModel)
+	}
 }
 
 // loadCodexGroupCatalogAccounts separates picker membership from capability
@@ -1392,6 +1406,7 @@ func mergeConfiguredCodexModelsManifest(
 	configuredModels []string,
 	selectedModels []string,
 	filterBySelection bool,
+	modelRestricted func(string) bool,
 ) ([]byte, bool, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -1427,7 +1442,7 @@ func mergeConfiguredCodexModelsManifest(
 			continue
 		}
 		descriptor.Slug = strings.TrimSpace(descriptor.Slug)
-		if isCodexDedicatedMediaModel(descriptor.Slug) {
+		if isCodexDedicatedMediaModel(descriptor.Slug) || modelRestricted(descriptor.Slug) {
 			changed = true
 			continue
 		}
@@ -1454,7 +1469,7 @@ func mergeConfiguredCodexModelsManifest(
 	}
 
 	for _, modelID := range configuredModels {
-		if isCodexDedicatedMediaModel(modelID) {
+		if isCodexDedicatedMediaModel(modelID) || modelRestricted(modelID) {
 			continue
 		}
 		if filterBySelection && !allowlist.Allows(modelID) {
