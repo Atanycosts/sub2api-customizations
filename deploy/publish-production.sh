@@ -14,7 +14,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="${SERVER:-root@103.236.85.237}"
 PUBLIC_BASE="${PUBLIC_BASE:-http://103.236.85.237:7788}"
-VERSION="${VERSION:-0.2.21-gateway-$(date +%Y%m%d-%H%M)}"
+VERSION="${VERSION:-$("$REPO_ROOT/backend/scripts/resolve-version.sh")-gateway-$(date +%Y%m%d-%H%M)}"
 PNPM_VERSION="${PNPM_VERSION:-9.15.9}"
 LABEL="${LABEL:-$(printf '%s' "$VERSION" | tr '/: ' '---')}"
 OUT="$REPO_ROOT/docs-local/build/sub2api-$LABEL"

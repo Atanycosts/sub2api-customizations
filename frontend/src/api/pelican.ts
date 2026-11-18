@@ -82,8 +82,13 @@ export async function getPelicanAdminResults(
   return data
 }
 
-export async function getPelicanAdminResult(id: string): Promise<PelicanAdminRun> {
-  const { data } = await apiClient.get<PelicanAdminRun>(`${adminRoot}/results/${id}`)
+export async function getPelicanAdminResult(
+  id: string,
+  options?: { signal?: AbortSignal },
+): Promise<PelicanAdminRun> {
+  const { data } = await apiClient.get<PelicanAdminRun>(`${adminRoot}/results/${id}`, {
+    signal: options?.signal,
+  })
   return data
 }
 

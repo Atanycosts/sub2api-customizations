@@ -5,15 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
-	"io"
-	"net/http"
-	"strings"
-	"time"
 )
 
 func pelicanBody(p PelicanPlanInput) []byte { return pelicanBodyWithPrompt(p, GatewayPelicanPrompt) }
@@ -95,7 +96,7 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 	ctx = WithHTTPUpstreamRedirectsDisabled(ctx)
 	ctx = WithOpenAIOutputCapRequired(ctx)
 	ctx, clock := requesttiming.New(ctx, run.ID, "/internal/pelican/"+run.Protocol)
-	ctx, _ = s.gateway.WithOpenAIRequestPricingContext(ctx, &group.ID)
+	ctx, pricingAt := s.gateway.WithOpenAIRequestPricingContext(ctx, &group.ID)
 	mapping, _ := s.gateway.ResolveChannelMappingAndRestrict(ctx, &group.ID, run.Model)
 	model := run.Model
 	if mapping.Mapped {
@@ -150,12 +151,18 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 			ctx = withOpenAIFastPolicyContext(ctx, settings)
 		}
 	}
-	policyBody, e := s.gateway.applyOpenAIFastPolicyToBody(ctx, account, normalizeOpenAIModelForUpstream(account, account.GetMappedModel(model)), body)
+	upstreamModel := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(model))
+	policyBody, e := s.gateway.applyOpenAIFastPolicyToBody(ctx, account, upstreamModel, body)
 	if e != nil {
 		run.Error = e.Error()
 		return
 	}
-	estimated, e := s.billing.CalculateCostWithServiceTier(account.GetMappedModel(model), UsageTokens{InputTokens: len([]byte(run.Prompt))*2 + 1024, OutputTokens: run.MaxOutputTokens}, 1, gjson.GetBytes(policyBody, "service_tier").String())
+	// Use the model's own price card, frozen at dispatch, for this separate
+	// experiment ledger. Do not apply customer prices or deduct a balance.
+	price := CostInput{Ctx: ctx, Model: upstreamModel, PricingAt: pricingAt, RateMultiplier: 1,
+		Tokens:      UsageTokens{InputTokens: len(run.Prompt)*2 + 1024, OutputTokens: run.MaxOutputTokens},
+		ServiceTier: gjson.GetBytes(policyBody, "service_tier").String()}
+	estimated, e := s.billing.CalculateCostUnified(price)
 	if e != nil || estimated.TotalCost <= 0 || estimated.TotalCost > run.ReservedUSD {
 		run.Error = "mapped model price unavailable or maximum estimate exceeds reservation"
 		return
@@ -244,13 +251,13 @@ func (s *PelicanService) execute(parent context.Context, run *PelicanRun) {
 		if err == nil && run.State == "completed" {
 			s.gateway.ReportOpenAIAccountScheduleResult(account, model, true, result.FirstTokenMs)
 		}
-		tokens := UsageTokens{InputTokens: max(0, result.Usage.InputTokens-result.Usage.CacheReadInputTokens-result.Usage.CacheCreationInputTokens), OutputTokens: result.Usage.OutputTokens, CacheReadTokens: result.Usage.CacheReadInputTokens, CacheCreationTokens: result.Usage.CacheCreationInputTokens}
 		if result.Usage.InputTokens+result.Usage.OutputTokens > 0 {
-			tier := ""
+			price.Model = run.UpstreamModel
+			price.Tokens = result.Usage.billingUsageTokens()
 			if result.ServiceTier != nil {
-				tier = *result.ServiceTier
+				price.ServiceTier = *result.ServiceTier
 			}
-			cost, costErr := s.billing.CalculateCostWithServiceTier(run.UpstreamModel, tokens, 1, tier)
+			cost, costErr := s.billing.CalculateCostUnified(price)
 			if costErr == nil {
 				run.CostUSD = &cost.TotalCost
 			}

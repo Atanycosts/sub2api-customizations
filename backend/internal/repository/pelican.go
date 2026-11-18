@@ -15,11 +15,24 @@ import (
 
 type pelicanRepository struct{ db *sql.DB }
 
+// An unsent, canceled run no longer reserves budget. A run that may have
+// reached the upstream keeps its reservation, even without verified usage.
+const pelicanUTCDay = `(date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`
+const pelicanDailySpend = `SELECT COALESCE(SUM(GREATEST(reserved_usd,COALESCE(cost_usd,0))),0) FROM pelican_runs
+	WHERE (created_at>=` + pelicanUTCDay + ` OR started_at>=` + pelicanUTCDay + `)
+	AND (started_at IS NOT NULL OR state<>'failed')`
+
 func NewPelicanRepository(db *sql.DB) service.PelicanRepository { return &pelicanRepository{db: db} }
 func (r *pelicanRepository) Config(ctx context.Context) (c service.PelicanConfig, err error) {
 	err = r.db.QueryRowContext(ctx, `SELECT enabled,daily_budget_usd FROM pelican_config WHERE id=1`).Scan(&c.Enabled, &c.DailyBudgetUSD)
 	return
 }
+
+func lockPelicanConfig(ctx context.Context, tx *sql.Tx) (c service.PelicanConfig, err error) {
+	err = tx.QueryRowContext(ctx, `SELECT enabled,daily_budget_usd FROM pelican_config WHERE id=1 FOR UPDATE`).Scan(&c.Enabled, &c.DailyBudgetUSD)
+	return
+}
+
 func (r *pelicanRepository) SaveConfig(ctx context.Context, c service.PelicanConfig) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE pelican_config SET enabled=$1,daily_budget_usd=$2 WHERE id=1`, c.Enabled, c.DailyBudgetUSD)
 	return err
@@ -90,9 +103,8 @@ func (r *pelicanRepository) Submit(ctx context.Context, planID, userID int64, id
 	}
 	defer func() { _ = tx.Rollback() }()
 	// Serialize reservations and durable UUID lookup across all workers/processes.
-	var enabled bool
-	var budget float64
-	if err = tx.QueryRowContext(ctx, `SELECT enabled,daily_budget_usd FROM pelican_config WHERE id=1 FOR UPDATE`).Scan(&enabled, &budget); err != nil {
+	config, err := lockPelicanConfig(ctx, tx)
+	if err != nil {
 		return nil, err
 	}
 	var old []byte
@@ -110,7 +122,7 @@ func (r *pelicanRepository) Submit(ctx context.Context, planID, userID int64, id
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	if !enabled || budget <= 0 {
+	if !config.Enabled || config.DailyBudgetUSD <= 0 {
 		return nil, service.ErrPelicanUnavailable
 	}
 	var busy bool
@@ -134,11 +146,11 @@ func (r *pelicanRepository) Submit(ctx context.Context, planID, userID int64, id
 	if scheduled && (!p.Enabled || p.NextRunAt.After(now)) {
 		return nil, service.ErrPelicanUnavailable
 	}
-	var spent float64
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(GREATEST(reserved_usd,COALESCE(cost_usd,0))),0) FROM pelican_runs WHERE created_at >= date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`).Scan(&spent); err != nil {
+	var fits bool
+	if err = tx.QueryRowContext(ctx, `SELECT (`+pelicanDailySpend+`) + $1::numeric(14,6) <= $2::numeric`, p.BudgetUSD, config.DailyBudgetUSD).Scan(&fits); err != nil {
 		return nil, err
 	}
-	if spent+p.BudgetUSD > budget {
+	if !fits {
 		return nil, service.ErrPelicanUnavailable
 	}
 	run := &service.PelicanRun{PelicanPublicRun: service.PelicanPublicRun{ID: id, Source: "group", GroupID: p.GroupID, GroupName: p.GroupName, Model: p.Model, Effort: p.Effort, Protocol: p.Protocol, PromptVersion: service.GatewayPelicanVersion, MaxOutputTokens: p.MaxOutputTokens, State: "running", CreatedAt: now}, Prompt: service.GatewayPelicanPrompt, PlanID: planID, RequestedBy: userID, Frozen: p.PelicanPlanInput, Published: p.Published, ReservedUSD: p.BudgetUSD}
@@ -150,7 +162,7 @@ func (r *pelicanRepository) Submit(ctx context.Context, planID, userID int64, id
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET last_run_at=$2::timestamptz,next_run_at=CASE WHEN $3 THEN $2::timestamptz+interval_minutes*INTERVAL '1 minute' ELSE next_run_at END,running_until=$2::timestamptz+INTERVAL '5 minutes' WHERE id=$1`, planID, now, scheduled)
+	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET next_run_at=CASE WHEN $3 THEN $2::timestamptz+interval_minutes*INTERVAL '1 minute' ELSE next_run_at END,running_until=$2::timestamptz+INTERVAL '5 minutes' WHERE id=$1`, planID, now, scheduled)
 	if err != nil {
 		return nil, err
 	}
@@ -270,24 +282,18 @@ func (r *pelicanRepository) Next(ctx context.Context) (*service.PelicanRun, erro
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// The config lock serializes claims across instances; an active execution
-	// owns the sole worker slot until finish or lease expiry.
-	var enabled bool
-	if err = tx.QueryRowContext(ctx, `SELECT enabled FROM pelican_config WHERE id=1 FOR UPDATE`).Scan(&enabled); err != nil {
+	// Submit reserves the sole slot. Lock settings and the plan before turning
+	// that reservation into permission to send to the upstream.
+	config, err := lockPelicanConfig(ctx, tx)
+	if err != nil {
 		return nil, err
-	}
-	if !enabled {
-		return nil, nil
-	}
-	var active bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id WHERE r.state='running' AND r.started_at IS NOT NULL AND p.running_until>NOW())`).Scan(&active); err != nil {
-		return nil, err
-	}
-	if active {
-		return nil, nil
 	}
 	var b []byte
-	err = tx.QueryRowContext(ctx, `UPDATE pelican_runs SET started_at=NOW() WHERE id=(SELECT r.id FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id WHERE r.state='running' AND r.started_at IS NULL AND p.running_until>NOW() ORDER BY r.created_at LIMIT 1 FOR UPDATE OF r SKIP LOCKED) AND state='running' AND started_at IS NULL RETURNING result`).Scan(&b)
+	var planEnabled, deleted bool
+	err = tx.QueryRowContext(ctx, `SELECT r.result,p.enabled,p.deleted_at IS NOT NULL
+		FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id
+		WHERE r.state='running' AND r.started_at IS NULL AND p.running_until>NOW()
+		ORDER BY r.created_at LIMIT 1 FOR UPDATE OF p,r`).Scan(&b, &planEnabled, &deleted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -298,7 +304,39 @@ func (r *pelicanRepository) Next(ctx context.Context) (*service.PelicanRun, erro
 	if err = json.Unmarshal(b, &run); err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET running_until=NOW()+INTERVAL '5 minutes' WHERE id=$1`, run.PlanID)
+	var blocked string
+	switch {
+	case deleted:
+		blocked = "plan deleted before execution"
+	case !planEnabled && run.RequestedBy == 0:
+		blocked = "scheduled plan paused before execution"
+	case !config.Enabled:
+		blocked = "pelican disabled before execution"
+	default:
+		var fits bool
+		// Count this reservation on the claim day, even if it was queued just
+		// before UTC midnight. Exclude it from the other runs' spend.
+		err = tx.QueryRowContext(ctx, `SELECT (`+pelicanDailySpend+` AND id<>$1) +
+			(SELECT reserved_usd FROM pelican_runs WHERE id=$1) <= $2::numeric`, run.ID, config.DailyBudgetUSD).Scan(&fits)
+		if err != nil {
+			return nil, err
+		}
+		if !fits {
+			blocked = "daily budget no longer covers this reservation"
+		}
+	}
+	if blocked != "" {
+		now := time.Now().UTC()
+		run.State, run.ErrorKind, run.Error, run.FinishedAt = "failed", "unavailable", blocked, &now
+		if err := finishPelicanRun(ctx, tx, &run); err != nil {
+			return nil, err
+		}
+		return nil, tx.Commit()
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE pelican_runs SET started_at=NOW() WHERE id=$1`, run.ID); err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET last_run_at=NOW(),running_until=NOW()+INTERVAL '5 minutes' WHERE id=$1`, run.PlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -308,27 +346,41 @@ func (r *pelicanRepository) Next(ctx context.Context) (*service.PelicanRun, erro
 	return &run, nil
 }
 func (r *pelicanRepository) Finish(ctx context.Context, run *service.PelicanRun) error {
-	b, err := json.Marshal(run)
-	if err != nil {
-		return err
-	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err = lockPelicanConfig(ctx, tx); err != nil {
+		return err
+	}
+	if err := finishPelicanRun(ctx, tx, run); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func finishPelicanRun(ctx context.Context, tx *sql.Tx, run *service.PelicanRun) error {
+	b, err := json.Marshal(run)
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE pelican_runs SET state=$2,finished_at=$3,result=$4,cost_usd=$5 WHERE id=$1 AND state='running'`, run.ID, run.State, run.FinishedAt, b, run.CostUSD)
 	if err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET running_until=NULL WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM pelican_runs WHERE plan_id=$1 AND state='running')`, run.PlanID)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
+	return err
 }
 func (r *pelicanRepository) Due(ctx context.Context) ([]int64, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM pelican_plans WHERE deleted_at IS NULL AND enabled AND next_run_at<=NOW() AND (running_until IS NULL OR running_until<=NOW()) AND EXISTS(SELECT 1 FROM pelican_config WHERE id=1 AND enabled AND daily_budget_usd>0) ORDER BY next_run_at LIMIT 10`)
+	rows, err := r.db.QueryContext(ctx, `WITH budget AS (
+		SELECT daily_budget_usd-(`+pelicanDailySpend+`) AS remaining
+		FROM pelican_config WHERE id=1 AND enabled AND daily_budget_usd>0
+		AND NOT EXISTS(SELECT 1 FROM pelican_runs WHERE state='running')
+	) SELECT p.id FROM pelican_plans p CROSS JOIN budget b
+	WHERE p.deleted_at IS NULL AND p.enabled AND p.next_run_at<=NOW()
+	AND p.running_until IS NULL AND (p.configuration->>'budget_usd')::numeric(14,6)<=b.remaining
+	ORDER BY p.next_run_at,p.id LIMIT 10`)
 	if err != nil {
 		return nil, err
 	}
@@ -349,16 +401,30 @@ func (r *pelicanRepository) Recover(ctx context.Context, startup bool) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	_, err = tx.ExecContext(ctx, `UPDATE pelican_runs r SET state='failed',finished_at=NOW(),result=result||jsonb_build_object('state','failed','finished_at',NOW(),'error_kind','unavailable','error','scheduled plan paused before execution') FROM pelican_plans p WHERE p.id=r.plan_id AND r.state='running' AND r.started_at IS NULL AND r.requested_by=0 AND (NOT p.enabled OR p.deleted_at IS NOT NULL)`)
+	if _, err = lockPelicanConfig(ctx, tx); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `WITH expired AS (
+		SELECT r.id,r.started_at,
+			CASE WHEN r.started_at IS NULL THEN 'failed' ELSE 'unknown' END AS state,
+			CASE WHEN r.started_at IS NULL THEN 'unavailable' ELSE 'interrupted' END AS error_kind,
+			CASE WHEN r.started_at IS NULL THEN 'reservation expired before execution' ELSE 'worker lease expired; no replay' END AS reason
+		FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id
+		WHERE r.state='running' AND (p.running_until IS NULL OR p.running_until<=NOW())
+	) UPDATE pelican_runs r SET state=e.state,finished_at=NOW(),result=r.result||jsonb_build_object(
+		'state',e.state,'finished_at',NOW(),'error_kind',e.error_kind,'error',e.reason,
+		'duration_ms',COALESCE((EXTRACT(EPOCH FROM NOW()-e.started_at)*1000)::bigint,0))
+	FROM expired e WHERE r.id=e.id`)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE pelican_runs r SET state='unknown',finished_at=NOW(),result=result||jsonb_build_object('state','unknown','finished_at',NOW(),'error_kind','interrupted','error','worker lease expired; no replay') FROM pelican_plans p WHERE p.id=r.plan_id AND r.state='running' AND p.running_until<NOW()`)
+	_, err = tx.ExecContext(ctx, `UPDATE pelican_plans p SET running_until=NULL WHERE p.running_until IS NOT NULL
+		AND NOT EXISTS(SELECT 1 FROM pelican_runs r WHERE r.plan_id=p.id AND r.state='running')`)
 	if err != nil {
 		return err
 	}
 	if startup {
-		_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET next_run_at=NOW()+interval_minutes*INTERVAL '1 minute' WHERE next_run_at<NOW() AND deleted_at IS NULL`)
+		_, err = tx.ExecContext(ctx, `UPDATE pelican_plans SET next_run_at=NOW()+interval_minutes*INTERVAL '1 minute' WHERE next_run_at<=NOW() AND enabled AND deleted_at IS NULL`)
 		if err != nil {
 			return err
 		}

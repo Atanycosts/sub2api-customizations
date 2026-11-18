@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"sync"
@@ -159,9 +160,10 @@ func (s *PelicanService) SaveConfig(ctx context.Context, c PelicanConfig) error 
 func (s *PelicanService) Plans(ctx context.Context) ([]PelicanPlan, error) { return s.repo.Plans(ctx) }
 func (s *PelicanService) SavePlan(ctx context.Context, id int64, in PelicanPlanInput) (*PelicanPlan, error) {
 	in.Model = strings.TrimSpace(in.Model)
-	if in.GroupID <= 0 || in.Model == "" || len(in.Model) > 200 || in.IntervalMinutes < 30 || in.IntervalMinutes > 10080 || in.MaxOutputTokens < 64 || in.MaxOutputTokens > 16384 || math.IsNaN(in.BudgetUSD) || math.IsInf(in.BudgetUSD, 0) || in.BudgetUSD <= 0 || in.BudgetUSD > 100 {
+	if in.GroupID <= 0 || in.Model == "" || len(in.Model) > 200 || in.IntervalMinutes < 30 || in.IntervalMinutes > 10080 || in.MaxOutputTokens < 64 || in.MaxOutputTokens > 16384 || math.IsNaN(in.BudgetUSD) || math.IsInf(in.BudgetUSD, 0) || in.BudgetUSD < 0.000001 || in.BudgetUSD > 100 {
 		return nil, ErrPelicanInvalid
 	}
+	in.BudgetUSD = math.Round(in.BudgetUSD*1e6) / 1e6
 	if in.Protocol != "chat" && in.Protocol != "responses" {
 		return nil, ErrPelicanInvalid
 	}
@@ -177,7 +179,11 @@ func (s *PelicanService) SavePlan(ctx context.Context, id int64, in PelicanPlanI
 	if g.Platform != PlatformOpenAI || g.Status != "active" || !g.ModelAllowlist.Allows(in.Model) {
 		return nil, infraerrors.BadRequest("PELICAN_INVALID", "pelican currently supports active OpenAI groups and their allowed models")
 	}
-	if _, _, err = ApplyOpenAIReasoningEffortPolicy(pelicanBody(in), g.MaxReasoningEffort, g.ReasoningEffortMappings, g.MaxReasoningEffortOverLimit); err != nil {
+	body, _, err := ApplyOpenAIReasoningEffortPolicy(pelicanBody(in), g.MaxReasoningEffort, g.ReasoningEffortMappings, g.MaxReasoningEffortOverLimit)
+	if err != nil {
+		return nil, infraerrors.BadRequest("PELICAN_INVALID", err.Error())
+	}
+	if err = validateGPT61RawEffort(body, in.Model); err != nil {
 		return nil, infraerrors.BadRequest("PELICAN_INVALID", err.Error())
 	}
 	p := &PelicanPlan{ID: id, PelicanPlanInput: in, GroupName: g.Name, NextRunAt: time.Now().UTC().Add(time.Duration(in.IntervalMinutes) * time.Minute)}
@@ -327,39 +333,13 @@ func (s *PelicanService) Stop() {
 }
 func (s *PelicanService) worker(ctx context.Context) {
 	defer close(s.done)
-	if err := s.repo.Recover(ctx, true); err != nil {
-		logger.LegacyPrintf("service.pelican", "startup recovery failed: %v", err)
-	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if err := s.repo.Recover(ctx, false); err != nil && ctx.Err() == nil {
-			logger.LegacyPrintf("service.pelican", "lease recovery failed: %v", err)
-		}
-		ids, err := s.repo.Due(ctx)
-		if err != nil && ctx.Err() == nil {
-			logger.LegacyPrintf("service.pelican", "due plans lookup failed: %v", err)
-		}
-		if err == nil {
-			for _, id := range ids {
-				if _, e := s.repo.Submit(ctx, id, 0, uuid.NewString(), true); e == nil {
-					break
-				}
-			}
-		}
-		run, err := s.repo.Next(ctx)
-		if err != nil && ctx.Err() == nil {
-			logger.LegacyPrintf("service.pelican", "run claim failed: %v", err)
-		}
-		if err == nil && run != nil {
-			s.execute(ctx, run)
-			continue
-		}
-		if err := s.repo.Prune(ctx); err != nil && ctx.Err() == nil {
-			logger.LegacyPrintf("service.pelican", "history pruning failed: %v", err)
+		if err := s.repo.Recover(ctx, true); err == nil {
+			break
+		} else if ctx.Err() == nil {
+			logger.LegacyPrintf("service.pelican", "startup recovery failed: %v", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -367,4 +347,59 @@ func (s *PelicanService) worker(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+	var nextPrune time.Time
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if time.Now().After(nextPrune) {
+			nextPrune = time.Now().Add(time.Hour)
+			if err := s.repo.Prune(ctx); err != nil && ctx.Err() == nil {
+				logger.LegacyPrintf("service.pelican", "history pruning failed: %v", err)
+			}
+		}
+		if s.workOnce(ctx) {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *PelicanService) workOnce(ctx context.Context) bool {
+	if err := s.repo.Recover(ctx, false); err != nil {
+		if ctx.Err() == nil {
+			logger.LegacyPrintf("service.pelican", "lease recovery failed: %v", err)
+		}
+		return false
+	}
+	ids, err := s.repo.Due(ctx)
+	if err != nil && ctx.Err() == nil {
+		logger.LegacyPrintf("service.pelican", "due plans lookup failed: %v", err)
+	}
+	for _, id := range ids {
+		_, err := s.repo.Submit(ctx, id, 0, uuid.NewString(), true)
+		if err == nil {
+			break
+		}
+		if errors.Is(err, ErrPelicanUnavailable) || errors.Is(err, ErrPelicanNotFound) {
+			continue
+		}
+		if ctx.Err() == nil {
+			logger.LegacyPrintf("service.pelican", "scheduled submit failed plan_id=%d: %v", id, err)
+		}
+		break
+	}
+	run, err := s.repo.Next(ctx)
+	if err != nil && ctx.Err() == nil {
+		logger.LegacyPrintf("service.pelican", "run claim failed: %v", err)
+	}
+	if err != nil || run == nil {
+		return false
+	}
+	s.execute(ctx, run)
+	return true
 }

@@ -341,4 +341,24 @@ describe('Pelican admin view', () => {
     ).toBe('false')
     wrapper.unmount()
   })
+
+  it('discovers a scheduled completion without pressing Run or Refresh', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Result Group')
+    currentPlan = { ...currentPlan, last_run_at: adminRun.created_at }
+    api.getPelicanAdminResults.mockResolvedValueOnce({
+      ...resultPage,
+      items: [{ ...adminRun, requested_by: 0 }],
+      total: 1,
+      pages: 1,
+      stats: { ...resultPage.stats, completed: 1 },
+    })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(api.getPelicanPlans).toHaveBeenCalledTimes(2)
+    expect(api.runPelicanPlan).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Result Group')
+    wrapper.unmount()
+  })
 })

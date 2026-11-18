@@ -160,7 +160,9 @@
                   <span v-if="plan.running_until" class="pelican-subcell text-sky-600 dark:text-sky-300">
                     {{ t('pelican.admin.plans.runningUntil', { time: formatTime(plan.running_until) }) }}
                   </span>
-                  <span v-else class="pelican-subcell">{{ t('pelican.admin.plans.nextRun', { time: formatTime(plan.next_run_at) }) }}</span>
+                  <span v-else-if="!plan.enabled || !savedCanRun" class="pelican-subcell">{{ t('pelican.admin.plans.schedulePaused') }}</span>
+                  <span v-else-if="plan.budget_usd > savedConfig.daily_budget_usd" class="pelican-subcell text-amber-700 dark:text-amber-300">{{ t('pelican.admin.plans.scheduleOverBudget') }}</span>
+                  <span v-else class="pelican-subcell" :title="formatDate(plan.next_run_at)">{{ t('pelican.admin.plans.nextRun', { time: formatSchedule(plan.next_run_at) }) }}</span>
                 </td>
                 <td>
                   <div class="flex items-center justify-end gap-1">
@@ -357,6 +359,7 @@ import PelicanPlanDialog from '@/components/pelican/PelicanPlanDialog.vue'
 import PelicanAdminResultDialog from '@/components/pelican/PelicanAdminResultDialog.vue'
 import PelicanRulesDialog from '@/components/pelican/PelicanRulesDialog.vue'
 import { formatPelicanDuration } from '@/components/pelican/pelicanFormat'
+import { usePelicanRefresh } from '@/components/pelican/usePelicanRefresh'
 import {
   deletePelicanPlan,
   getPelicanAdminResults,
@@ -416,10 +419,14 @@ const viewport = reactive({ width: window.innerWidth, height: window.innerHeight
 const planPageIndex = ref(1)
 let mounted = false
 let layoutObserver: ResizeObserver | null = null
-let pollTimer: ReturnType<typeof setTimeout> | null = null
-let pollAttempts = 0
 let planRequestSequence = 0
 let resultRequestSequence = 0
+const refresh = usePelicanRefresh(
+  () => void Promise.all([loadPlans(true), loadResults(true)]),
+  () => resultPage.value?.stats.running || plans.value.some((plan) => plan.running_until)
+    ? 10_000
+    : 30_000,
+)
 
 const viewportRows = computed(() => pelicanViewportRows(viewport.width, viewport.height))
 const planPageSize = computed(() => viewportRows.value.plans)
@@ -465,6 +472,13 @@ function formatTime(value: string): string {
     : date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatSchedule(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 function stateTextClass(state: PelicanRunState): string {
   if (state === 'completed') return 'text-emerald-600 dark:text-emerald-300'
   if (state === 'failed') return 'text-rose-600 dark:text-rose-300'
@@ -481,27 +495,6 @@ function setPlanBusy(id: number, busy: boolean) {
   if (busy) next.add(id)
   else next.delete(id)
   togglingPlanIDs.value = next
-}
-
-function clearPoll() {
-  if (pollTimer) clearTimeout(pollTimer)
-  pollTimer = null
-}
-
-function schedulePoll() {
-  clearPoll()
-  const runningPlan = plans.value.some((plan) =>
-    plan.running_until ? Date.parse(plan.running_until) > Date.now() : false,
-  )
-  if (
-    document.visibilityState !== 'visible'
-    || (!resultPage.value?.stats.running && !runningPlan)
-    || pollAttempts >= 60
-  ) return
-  pollTimer = setTimeout(async () => {
-    pollAttempts += 1
-    await Promise.all([loadPlans(true), loadResults(true)])
-  }, 10_000)
 }
 
 async function loadConfig() {
@@ -536,7 +529,7 @@ async function loadGroups() {
 }
 
 async function loadPlans(background = false) {
-  clearPoll()
+  refresh.clear()
   const requestID = ++planRequestSequence
   if (!background) loadingPlans.value = true
   try {
@@ -550,13 +543,13 @@ async function loadPlans(background = false) {
     if (requestID === planRequestSequence) {
       loadingPlans.value = false
       planPageIndex.value = clampPage(planPageIndex.value, plans.value.length, planPageSize.value)
-      schedulePoll()
+      refresh.schedule()
     }
   }
 }
 
 async function loadResults(background: boolean) {
-  clearPoll()
+  refresh.clear()
   const requestID = ++resultRequestSequence
   const requestedPage = resultPageIndex.value
   if (!background) loadingResults.value = true
@@ -585,13 +578,13 @@ async function loadResults(background: boolean) {
   } finally {
     if (requestID === resultRequestSequence) {
       loadingResults.value = false
-      schedulePoll()
+      refresh.schedule()
     }
   }
 }
 
 async function saveConfig() {
-  clearPoll()
+  refresh.clear()
   savingConfig.value = true
   pageError.value = ''
   try {
@@ -602,6 +595,7 @@ async function saveConfig() {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.config.saveFailed'))
   } finally {
     savingConfig.value = false
+    refresh.schedule()
   }
 }
 
@@ -616,7 +610,7 @@ function openEditPlan(plan: PelicanPlan) {
 }
 
 async function savePlan(input: PelicanPlanInput) {
-  clearPoll()
+  refresh.clear()
   planRequestSequence += 1
   savingPlan.value = true
   pageError.value = ''
@@ -628,6 +622,7 @@ async function savePlan(input: PelicanPlanInput) {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.saveFailed'))
   } finally {
     savingPlan.value = false
+    refresh.schedule()
   }
 }
 
@@ -637,7 +632,7 @@ async function updatePlanFlag(
   value: boolean,
 ) {
   if (planBusy(plan.id)) return
-  clearPoll()
+  refresh.clear()
   planRequestSequence += 1
   setPlanBusy(plan.id, true)
   pageError.value = ''
@@ -650,12 +645,13 @@ async function updatePlanFlag(
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.saveFailed'))
   } finally {
     setPlanBusy(plan.id, false)
+    refresh.schedule()
   }
 }
 
 async function removePlan(plan: PelicanPlan) {
   if (!window.confirm(t('pelican.admin.plans.deleteConfirm', { model: plan.model }))) return
-  clearPoll()
+  refresh.clear()
   planRequestSequence += 1
   pageError.value = ''
   try {
@@ -664,12 +660,14 @@ async function removePlan(plan: PelicanPlan) {
     await loadPlans()
   } catch (error) {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.deleteFailed'))
+  } finally {
+    refresh.schedule()
   }
 }
 
 async function runNow(plan: PelicanPlan) {
   if (!savedCanRun.value || runningPlanID.value != null) return
-  clearPoll()
+  refresh.clear()
   planRequestSequence += 1
   const key = String(plan.id)
   submitIDs[key] = pelicanSubmitID(submitIDs[key], operationsUUID)
@@ -684,18 +682,17 @@ async function runNow(plan: PelicanPlan) {
     pageError.value = extractApiErrorMessage(error, t('pelican.admin.plans.runFailed'))
   } finally {
     runningPlanID.value = null
+    refresh.schedule()
   }
 }
 
 function applyResultFilters() {
   resultPageIndex.value = 1
-  pollAttempts = 0
   void loadResults(false)
 }
 
 function changeResultPage(page: number) {
   resultPageIndex.value = page
-  pollAttempts = 0
   void loadResults(false)
 }
 
@@ -704,18 +701,12 @@ function openResult(id: string) {
   resultDialogOpen.value = true
 }
 
-function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') schedulePoll()
-  else clearPoll()
-}
-
 function handleResize() {
   viewport.width = window.innerWidth
   viewport.height = adminRoot.value?.clientHeight ?? window.innerHeight
 }
 
 onMounted(async () => {
-  document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('resize', handleResize)
   if (adminRoot.value) {
     viewport.height = adminRoot.value.clientHeight || window.innerHeight
@@ -730,11 +721,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  mounted = false
   layoutObserver?.disconnect()
   planRequestSequence += 1
   resultRequestSequence += 1
-  clearPoll()
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('resize', handleResize)
 })
 </script>

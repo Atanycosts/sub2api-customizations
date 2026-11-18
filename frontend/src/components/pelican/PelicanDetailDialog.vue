@@ -104,6 +104,7 @@ import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PelicanDynamicPreview from './PelicanDynamicPreview.vue'
+import { usePelicanRefresh } from './usePelicanRefresh'
 import { getPelicanResult } from '@/api/pelican'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatPelicanDuration, pelicanStateClass } from './pelicanFormat'
@@ -121,32 +122,40 @@ const run = ref<PelicanPublicRunDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
-let requestSequence = 0
+const refresh = usePelicanRefresh(
+  () => void load(true),
+  () => props.show && run.value?.state === 'running' ? 10_000 : null,
+)
 
 function formatDate(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-async function load() {
-  const requestID = ++requestSequence
+async function load(background = false) {
+  refresh.clear()
   controller?.abort()
+  if (!background) {
+    run.value = null
+    loading.value = false
+  }
+  error.value = ''
+  if (!props.show || !props.runId) return
   const current = new AbortController()
   controller = current
-  run.value = null
-  error.value = ''
-  loading.value = false
-  if (!props.show || !props.runId) return
-  loading.value = true
+  if (!background) loading.value = true
   try {
     const result = await getPelicanResult(props.runId, { signal: current.signal })
-    if (requestID === requestSequence) run.value = result
+    if (!current.signal.aborted) run.value = result
   } catch (cause) {
-    if (requestID === requestSequence && !current.signal.aborted) {
+    if (!current.signal.aborted) {
       error.value = extractApiErrorMessage(cause, t('pelican.detail.loadFailed'))
     }
   } finally {
-    if (requestID === requestSequence) loading.value = false
+    if (!current.signal.aborted) {
+      loading.value = false
+      refresh.schedule()
+    }
   }
 }
 
@@ -155,8 +164,5 @@ watch(
   () => void load(),
   { immediate: true }
 )
-onBeforeUnmount(() => {
-  requestSequence += 1
-  controller?.abort()
-})
+onBeforeUnmount(() => controller?.abort())
 </script>

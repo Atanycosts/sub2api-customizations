@@ -173,6 +173,7 @@ import PelicanCompactPager from '@/components/pelican/PelicanCompactPager.vue'
 import PelicanRulesDialog from '@/components/pelican/PelicanRulesDialog.vue'
 import PelicanHistoryDialog from '@/components/pelican/PelicanHistoryDialog.vue'
 import { usePelicanGalleryLayout } from '@/components/pelican/usePelicanGalleryLayout'
+import { usePelicanRefresh } from '@/components/pelican/usePelicanRefresh'
 import PelicanTestCard from '@/components/pelican/PelicanTestCard.vue'
 import PelicanDetailDialog from '@/components/pelican/PelicanDetailDialog.vue'
 import PelicanCompareDialog from '@/components/pelican/PelicanCompareDialog.vue'
@@ -203,8 +204,10 @@ const detailOpen = ref(false)
 const detailRunId = ref<string | null>(null)
 const compareOpen = ref(false)
 let controller: AbortController | null = null
-let pollTimer: ReturnType<typeof setTimeout> | null = null
-let pollAttempts = 0
+const refresh = usePelicanRefresh(
+  () => void loadResults(true),
+  () => data.value?.stats.running ? 10_000 : 30_000,
+)
 
 const groupOptions = computed(() => [
   ...availableGroups.value.map((group) => ({
@@ -256,23 +259,8 @@ function recordModels(items: { model: string }[]) {
   knownModels.value = [...models].sort((left, right) => left.localeCompare(right))
 }
 
-function clearPoll() {
-  if (pollTimer) clearTimeout(pollTimer)
-  pollTimer = null
-}
-
-function schedulePoll() {
-  clearPoll()
-  if (document.visibilityState !== 'visible' || !data.value?.stats.running || pollAttempts >= 60)
-    return
-  pollTimer = setTimeout(async () => {
-    pollAttempts += 1
-    await loadResults(true)
-  }, 10_000)
-}
-
 async function loadResults(background = false) {
-  clearPoll()
+  refresh.clear()
   controller?.abort()
   const current = new AbortController()
   controller = current
@@ -300,7 +288,7 @@ async function loadResults(background = false) {
     const lastPage = Math.max(1, result.pages)
     if (page.value > lastPage) {
       page.value = lastPage
-      await loadResults()
+      await loadResults(background)
       return
     }
     data.value = result
@@ -317,7 +305,7 @@ async function loadResults(background = false) {
   } finally {
     if (!current.signal.aborted) {
       loading.value = false
-      schedulePoll()
+      refresh.schedule()
     }
   }
 }
@@ -326,7 +314,6 @@ function applyFilters() {
   appliedModel.value = modelFilter.value.trim()
   appliedEffort.value = effortFilter.value
   page.value = 1
-  pollAttempts = 0
   void loadResults()
 }
 
@@ -339,7 +326,6 @@ function resetFilters() {
 
 function changePage(nextPage: number) {
   page.value = nextPage
-  pollAttempts = 0
   void loadResults()
 }
 
@@ -361,21 +347,8 @@ function toggleCompare(id: string) {
   selectedForCompare.value = togglePelicanComparison(selectedForCompare.value, id)
 }
 
-function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') schedulePoll()
-  else clearPoll()
-}
-
-onMounted(() => {
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  void loadResults()
-})
-
-onBeforeUnmount(() => {
-  controller?.abort()
-  clearPoll()
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
-})
+onMounted(() => void loadResults())
+onBeforeUnmount(() => controller?.abort())
 </script>
 
 <style scoped>

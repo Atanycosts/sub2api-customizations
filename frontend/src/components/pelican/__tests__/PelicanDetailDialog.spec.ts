@@ -73,4 +73,21 @@ describe('compact user observation detail', () => {
     expect(wrapper.text()).toContain('pelican.errorKind.timeout')
     wrapper.unmount()
   })
+
+  it('shows the artwork when an open running observation completes', async () => {
+    vi.useFakeTimers()
+    api.getPelicanResult.mockResolvedValueOnce({ ...run, state: 'running', output: undefined })
+    const wrapper = mountDetail()
+    try {
+      await flushPromises()
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(wrapper.get('iframe').attributes('srcdoc')).toContain('actual artwork')
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(api.getPelicanResult).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
 })

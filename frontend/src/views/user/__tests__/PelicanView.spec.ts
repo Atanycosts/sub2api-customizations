@@ -239,6 +239,37 @@ describe('compact Pelican gallery', () => {
     wrapper.unmount()
   })
 
+  it('discovers scheduled results while idle and refreshes immediately on returning to the tab', async () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const wrapper = mount(PelicanView, { global: { stubs } })
+    try {
+      await flushPromises()
+      api.getPelicanResults.mockResolvedValueOnce({
+        ...result([{ ...run, id: 'scheduled', state: 'running' }]),
+        stats: { completed: 0, failed: 0, unknown: 0, running: 1 },
+      })
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.get('article').text()).toContain('running')
+
+      visibility.mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(api.getPelicanResults).toHaveBeenCalledTimes(2)
+
+      api.getPelicanResults.mockResolvedValueOnce(result([{ ...run, id: 'scheduled', state: 'completed' }]))
+      visibility.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.get('article').text()).toContain('completed')
+    } finally {
+      wrapper.unmount()
+      visibility.mockRestore()
+    }
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(api.getPelicanResults).toHaveBeenCalledTimes(3)
+  })
+
   it('ignores a superseded response and cancels the current request on unmount', async () => {
     let resolveFirst!: (value: PelicanPublicPage) => void
     api.getPelicanResults.mockReturnValueOnce(

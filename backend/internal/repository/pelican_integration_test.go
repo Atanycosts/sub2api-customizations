@@ -332,3 +332,207 @@ func TestPelicanPlanFlagsPreserveScheduleAndRunningMetadata(t *testing.T) {
 	require.NoError(t, repo.DeletePlan(ctx, plan.ID))
 	require.ErrorIs(t, repo.SavePlan(ctx, plan), service.ErrPelicanNotFound)
 }
+
+func TestPelicanScheduledAdmissionSkipsUnaffordablePlansAndClaimsOnce(t *testing.T) {
+	repo, group := newPelicanScheduleFixture(t)
+	ctx := context.Background()
+	for i := range 11 {
+		newDuePelicanPlan(t, repo, group, 1.50, time.Duration(i-20)*time.Minute)
+	}
+	plan := newDuePelicanPlan(t, repo, group, 0.25, -time.Minute)
+	ids, err := repo.Due(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []int64{plan.ID}, ids)
+	run, err := repo.Submit(ctx, plan.ID, 0, uuid.NewString(), true)
+	require.NoError(t, err)
+	require.Zero(t, run.RequestedBy)
+	var lastRun *time.Time
+	var nextRun time.Time
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT last_run_at,next_run_at FROM pelican_plans WHERE id=$1`, plan.ID).Scan(&lastRun, &nextRun))
+	require.Nil(t, lastRun)
+	require.WithinDuration(t, run.CreatedAt.Add(30*time.Minute), nextRun, time.Millisecond)
+	ids, err = repo.Due(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+
+	// Separate worker instances use independent connections and the same global slot.
+	workers := []*pelicanRepository{repo, {db: integrationDB}, {db: integrationDB}}
+	results := make([]*service.PelicanRun, len(workers))
+	errs := make([]error, len(workers))
+	var wg sync.WaitGroup
+	for i, worker := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = worker.Next(ctx)
+		}()
+	}
+	wg.Wait()
+	claims := 0
+	for i, err := range errs {
+		require.NoError(t, err)
+		if results[i] != nil {
+			claims++
+			require.Equal(t, run.ID, results[i].ID)
+		}
+	}
+	require.Equal(t, 1, claims)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT last_run_at FROM pelican_plans WHERE id=$1`, plan.ID).Scan(&lastRun))
+	require.NotNil(t, lastRun)
+}
+
+func TestPelicanQueuedRunRechecksControlsAtClaim(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		manual   bool
+		change   func(t *testing.T, repo *pelicanRepository, plan *service.PelicanPlan)
+		wantSend bool
+	}{
+		{name: "daily budget zero", change: func(t *testing.T, repo *pelicanRepository, _ *service.PelicanPlan) {
+			require.NoError(t, repo.SaveConfig(t.Context(), service.PelicanConfig{Enabled: true}))
+		}},
+		{name: "daily budget lowered", change: func(t *testing.T, repo *pelicanRepository, _ *service.PelicanPlan) {
+			require.NoError(t, repo.SaveConfig(t.Context(), service.PelicanConfig{Enabled: true, DailyBudgetUSD: 0.49}))
+		}},
+		{name: "disabled globally", change: func(t *testing.T, repo *pelicanRepository, _ *service.PelicanPlan) {
+			require.NoError(t, repo.SaveConfig(t.Context(), service.PelicanConfig{DailyBudgetUSD: 1}))
+		}},
+		{name: "schedule paused", change: func(t *testing.T, repo *pelicanRepository, plan *service.PelicanPlan) {
+			plan.Enabled = false
+			require.NoError(t, repo.SavePlan(t.Context(), plan))
+		}},
+		{name: "manual run on a paused schedule", manual: true, wantSend: true, change: func(t *testing.T, repo *pelicanRepository, plan *service.PelicanPlan) {
+			plan.Enabled = false
+			require.NoError(t, repo.SavePlan(t.Context(), plan))
+		}},
+		{name: "manual plan deleted", manual: true, change: func(t *testing.T, repo *pelicanRepository, plan *service.PelicanPlan) {
+			require.NoError(t, repo.DeletePlan(t.Context(), plan.ID))
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			repo, group := newPelicanScheduleFixture(t)
+			plan := newDuePelicanPlan(t, repo, group, 0.50, -time.Minute)
+			var userID int64
+			if tt.manual {
+				userID = 7
+			}
+			run, err := repo.Submit(ctx, plan.ID, userID, uuid.NewString(), !tt.manual)
+			require.NoError(t, err)
+			tt.change(t, repo, plan)
+			claimed, err := repo.Next(ctx)
+			require.NoError(t, err)
+			if tt.wantSend {
+				require.Equal(t, run.ID, claimed.ID)
+				return
+			}
+			require.Nil(t, claimed)
+			canceled, err := repo.Result(ctx, run.ID)
+			require.NoError(t, err)
+			require.Equal(t, "failed", canceled.State)
+			require.Equal(t, "unavailable", canceled.ErrorKind)
+			require.NotNil(t, canceled.FinishedAt)
+			var started, lease *time.Time
+			require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT r.started_at,p.running_until FROM pelican_runs r JOIN pelican_plans p ON p.id=r.plan_id WHERE r.id=$1`, run.ID).Scan(&started, &lease))
+			require.Nil(t, started)
+			require.Nil(t, lease)
+			require.NoError(t, repo.SaveConfig(ctx, service.PelicanConfig{Enabled: true, DailyBudgetUSD: 0.5}))
+			duplicate, err := repo.Submit(ctx, plan.ID, userID, run.ID, !tt.manual)
+			require.NoError(t, err)
+			require.Equal(t, "failed", duplicate.State)
+			next := newDuePelicanPlan(t, repo, group, .5, -time.Minute)
+			_, err = repo.Submit(ctx, next.ID, 0, uuid.NewString(), true)
+			require.NoError(t, err, "an unsent run must release its budget")
+		})
+	}
+}
+
+func TestPelicanRestartRecoversLeasesWithoutReplayOrCatchup(t *testing.T) {
+	repo, group := newPelicanScheduleFixture(t)
+	ctx := context.Background()
+	missed := newDuePelicanPlan(t, repo, group, 0.5, -time.Hour)
+	paused := newDuePelicanPlan(t, repo, group, 0.5, -time.Hour)
+	paused.Enabled = false
+	require.NoError(t, repo.SavePlan(ctx, paused))
+	expire := func(planID int64) {
+		t.Helper()
+		_, err := integrationDB.ExecContext(ctx, `UPDATE pelican_plans SET running_until=NOW()-INTERVAL '1 second' WHERE id=$1`, planID)
+		require.NoError(t, err)
+	}
+	queued, err := repo.Submit(ctx, missed.ID, 7, uuid.NewString(), false)
+	require.NoError(t, err)
+	expire(missed.ID)
+	require.NoError(t, repo.Recover(ctx, true))
+	unsent, err := repo.Result(ctx, queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, "failed", unsent.State)
+	require.Contains(t, unsent.Error, "before execution")
+	var pausedNext, missedNext time.Time
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT next_run_at FROM pelican_plans WHERE id=$1`, paused.ID).Scan(&pausedNext))
+	require.WithinDuration(t, paused.NextRunAt, pausedNext, time.Millisecond)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT next_run_at FROM pelican_plans WHERE id=$1`, missed.ID).Scan(&missedNext))
+	require.WithinDuration(t, time.Now().Add(30*time.Minute), missedNext, 5*time.Second)
+	ids, err := repo.Due(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+
+	claimed, err := repo.Submit(ctx, missed.ID, 7, uuid.NewString(), false)
+	require.NoError(t, err)
+	got, err := repo.Next(ctx)
+	require.NoError(t, err)
+	require.Equal(t, claimed.ID, got.ID)
+	require.NoError(t, repo.Recover(ctx, true))
+	active, err := repo.Result(ctx, claimed.ID)
+	require.NoError(t, err)
+	require.Equal(t, "running", active.State, "another worker may still own a live lease")
+	expire(missed.ID)
+	require.NoError(t, repo.Recover(ctx, false))
+	got, err = repo.Next(ctx)
+	require.NoError(t, err)
+	require.Nil(t, got)
+	unknown, err := repo.Result(ctx, claimed.ID)
+	require.NoError(t, err)
+	require.Equal(t, "unknown", unknown.State)
+	require.Equal(t, "interrupted", unknown.ErrorKind)
+	var lease *time.Time
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT running_until FROM pelican_plans WHERE id=$1`, missed.ID).Scan(&lease))
+	require.Nil(t, lease)
+	claimed.State = "completed"
+	require.NoError(t, repo.Finish(ctx, claimed))
+	duplicate, err := repo.Submit(ctx, missed.ID, 7, claimed.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, "unknown", duplicate.State)
+	require.NoError(t, repo.SaveConfig(ctx, service.PelicanConfig{Enabled: true, DailyBudgetUSD: .5}))
+	_, err = repo.Submit(ctx, missed.ID, 7, uuid.NewString(), false)
+	require.ErrorIs(t, err, service.ErrPelicanUnavailable, "an unknown execution must keep its reservation")
+}
+
+func newPelicanScheduleFixture(t *testing.T) (*pelicanRepository, *service.Group) {
+	t.Helper()
+	ctx := context.Background()
+	repo := &pelicanRepository{db: integrationDB}
+	previous, err := repo.Config(ctx)
+	require.NoError(t, err)
+	group := mustCreateGroup(t, integrationEntClient, &service.Group{Name: "pelican-schedule-" + uuid.NewString(), Platform: service.PlatformOpenAI, Status: service.StatusActive})
+	t.Cleanup(func() {
+		_, err := integrationDB.ExecContext(ctx, `DELETE FROM pelican_runs WHERE group_id=$1`, group.ID)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, `DELETE FROM pelican_plans WHERE group_id=$1`, group.ID)
+		require.NoError(t, err)
+		_, err = integrationDB.ExecContext(ctx, `DELETE FROM groups WHERE id=$1`, group.ID)
+		require.NoError(t, err)
+		require.NoError(t, repo.SaveConfig(ctx, previous))
+	})
+	require.NoError(t, repo.SaveConfig(ctx, service.PelicanConfig{Enabled: true, DailyBudgetUSD: 1}))
+	return repo, group
+}
+
+func newDuePelicanPlan(t *testing.T, repo *pelicanRepository, group *service.Group, reserve float64, due time.Duration) *service.PelicanPlan {
+	t.Helper()
+	plan := &service.PelicanPlan{
+		PelicanPlanInput: service.PelicanPlanInput{GroupID: group.ID, Model: "gpt-6.2-sol", Effort: "high", Protocol: "responses", Published: true, Enabled: true, IntervalMinutes: 30, MaxOutputTokens: 1024, BudgetUSD: reserve},
+		GroupName:        group.Name, NextRunAt: time.Now().UTC().Add(due),
+	}
+	require.NoError(t, repo.SavePlan(t.Context(), plan))
+	return plan
+}

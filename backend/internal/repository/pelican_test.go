@@ -41,7 +41,7 @@ func TestPelicanBudgetReservationUsesLockedDailyBudget(t *testing.T) {
 	m.ExpectQuery("SELECT result FROM pelican_runs WHERE id").WillReturnError(sql.ErrNoRows)
 	m.ExpectQuery("SELECT EXISTS.*state='running'").WillReturnRows(sqlmock.NewRows([]string{"busy"}).AddRow(false))
 	m.ExpectQuery("SELECT p.id.*FOR UPDATE OF p").WillReturnRows(sqlmock.NewRows([]string{"id", "config", "name", "last", "next", "lease"}).AddRow(2, b, "public", nil, time.Now().Add(time.Hour), nil))
-	m.ExpectQuery("SELECT COALESCE\\(SUM\\(GREATEST").WillReturnRows(sqlmock.NewRows([]string{"spent"}).AddRow(0.5))
+	m.ExpectQuery("SELECT \\(SELECT COALESCE\\(SUM\\(GREATEST").WillReturnRows(sqlmock.NewRows([]string{"fits"}).AddRow(false))
 	m.ExpectRollback()
 	_, err = r.Submit(context.Background(), 2, 3, "00000000-0000-0000-0000-000000000001", false)
 	require.ErrorIs(t, err, service.ErrPelicanUnavailable)

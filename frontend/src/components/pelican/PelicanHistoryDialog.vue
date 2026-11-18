@@ -70,6 +70,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PelicanCompactPager from './PelicanCompactPager.vue'
 import { formatPelicanDuration, pelicanStateClass } from './pelicanFormat'
+import { usePelicanRefresh } from './usePelicanRefresh'
 import { getPelicanResults } from '@/api/pelican'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { PelicanEffort, PelicanPublicPage } from '@/types/pelican'
@@ -87,18 +88,25 @@ const page = ref(1)
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
+const refresh = usePelicanRefresh(
+  () => void load(true),
+  () => props.show ? (data.value?.stats.running ? 10_000 : 30_000) : null,
+)
 function formatDate(value: string) {
   return new Date(value).toLocaleString()
 }
-async function load() {
+async function load(background = false) {
+  refresh.clear()
   controller?.abort()
+  if (!background) {
+    data.value = null
+    loading.value = false
+  }
+  error.value = ''
+  if (!props.show || props.groupId === null) return
   const current = new AbortController()
   controller = current
-  loading.value = false
-  error.value = ''
-  data.value = null
-  if (!props.show || props.groupId === null) return
-  loading.value = true
+  if (!background) loading.value = true
   try {
     const result = await getPelicanResults(
       {
@@ -114,7 +122,7 @@ async function load() {
     const lastPage = Math.max(1, result.pages)
     if (page.value > lastPage) {
       page.value = lastPage
-      await load()
+      await load(background)
       return
     }
     data.value = result
@@ -122,7 +130,10 @@ async function load() {
     if (!current.signal.aborted)
       error.value = extractApiErrorMessage(cause, t('pelican.history.loadFailed'))
   } finally {
-    if (!current.signal.aborted) loading.value = false
+    if (!current.signal.aborted) {
+      loading.value = false
+      refresh.schedule()
+    }
   }
 }
 function changePage(value: number) {

@@ -50,7 +50,7 @@
         <p><span class="text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.upstreamModel') }}:</span> <span class="font-mono">{{ run.upstream_model }}</span></p>
         <p><span class="text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.endpoint') }}:</span> <span class="break-all font-mono">{{ run.endpoint }}</span></p>
         <p><span class="text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.terminal') }}:</span> <span class="font-mono">{{ run.terminal || '—' }}</span></p>
-        <p><span class="text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.requestedBy') }}:</span> #{{ run.requested_by }}</p>
+        <p><span class="text-gray-500 dark:text-dark-300">{{ t('pelican.admin.results.requestedBy') }}:</span> {{ run.requested_by === 0 ? t('pelican.admin.results.scheduled') : `#${run.requested_by}` }}</p>
       </div>
 
       <p v-if="run.error" class="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
@@ -92,6 +92,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PelicanDynamicPreview from './PelicanDynamicPreview.vue'
 import PelicanRunFacts from './PelicanRunFacts.vue'
+import { usePelicanRefresh } from './usePelicanRefresh'
 import { getPelicanAdminResult } from '@/api/pelican'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { pelicanStateClass } from './pelicanFormat'
@@ -109,7 +110,10 @@ const run = ref<PelicanAdminRun | null>(null)
 const loading = ref(false)
 const error = ref('')
 let controller: AbortController | null = null
-let requestSequence = 0
+const refresh = usePelicanRefresh(
+  () => void load(true),
+  () => props.show && run.value?.state === 'running' ? 10_000 : null,
+)
 
 function pretty(value: unknown): string {
   if (value == null || value === '') return '—'
@@ -120,31 +124,33 @@ function pretty(value: unknown): string {
   }
 }
 
-async function load() {
-  const requestID = ++requestSequence
+async function load(background = false) {
+  refresh.clear()
   controller?.abort()
+  if (!background) {
+    run.value = null
+    loading.value = false
+  }
+  error.value = ''
+  if (!props.show || !props.runId) return
   const current = new AbortController()
   controller = current
-  run.value = null
-  error.value = ''
-  loading.value = false
-  if (!props.show || !props.runId) return
-  loading.value = true
+  if (!background) loading.value = true
   try {
-    const result = await getPelicanAdminResult(props.runId)
-    if (requestID === requestSequence) run.value = result
+    const result = await getPelicanAdminResult(props.runId, { signal: current.signal })
+    if (!current.signal.aborted) run.value = result
   } catch (cause) {
-    if (requestID === requestSequence) {
+    if (!current.signal.aborted) {
       error.value = extractApiErrorMessage(cause, t('pelican.admin.results.detailLoadFailed'))
     }
   } finally {
-    if (requestID === requestSequence) loading.value = false
+    if (!current.signal.aborted) {
+      loading.value = false
+      refresh.schedule()
+    }
   }
 }
 
 watch(() => [props.show, props.runId] as const, () => void load(), { immediate: true })
-onBeforeUnmount(() => {
-  requestSequence += 1
-  controller?.abort()
-})
+onBeforeUnmount(() => controller?.abort())
 </script>

@@ -115,9 +115,9 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Set production version
+        run: printf 'VERSION=%s-gateway-%s\n' "$(./backend/scripts/resolve-version.sh)" "$GITHUB_SHA" >> "$GITHUB_ENV"
       - name: Build embedded production binary
-        env:
-          VERSION: 0.2.21-gateway-${{ github.sha }}
         run: |
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run build
@@ -128,8 +128,6 @@ jobs:
             -ldflags "-s -w -X main.Version=$VERSION -X main.Commit=$GITHUB_SHA -X main.BuildType=release" \
             -o ../production-artifact/sub2api ./cmd/server
       - name: Record exact commit and asset hashes
-        env:
-          VERSION: 0.2.21-gateway-${{ github.sha }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, pathlib, re

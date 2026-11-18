@@ -82,7 +82,8 @@ describe('pelican API', () => {
     await getPelicanConfig()
     await getPelicanPlans()
     await getPelicanAdminResults({ plan_id: 9, state: 'running', page: 1, page_size: 12 })
-    await getPelicanAdminResult('run-2')
+    const signal = new AbortController().signal
+    await getPelicanAdminResult('run-2', { signal })
     await savePelicanConfig({ enabled: true, daily_budget_usd: 2 })
 
     const planInput = {
@@ -106,7 +107,7 @@ describe('pelican API', () => {
     expect(get).toHaveBeenNthCalledWith(3, '/admin/pelican/results', {
       params: { plan_id: 9, state: 'running', page: 1, page_size: 12 },
     })
-    expect(get).toHaveBeenNthCalledWith(4, '/admin/pelican/results/run-2')
+    expect(get).toHaveBeenNthCalledWith(4, '/admin/pelican/results/run-2', { signal })
     expect(put).toHaveBeenNthCalledWith(1, '/admin/pelican/config', {
       enabled: true,
       daily_budget_usd: 2,
