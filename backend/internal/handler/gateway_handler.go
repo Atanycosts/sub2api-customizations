@@ -1208,7 +1208,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	// Fallback to default models
 	if platform == service.PlatformOpenAI {
-		writeModelsListResponse(c, openai.DefaultModels)
+		writeOpenAIModelsList(c, openai.GatewayFallbackModelIDs())
 		return
 	}
 
@@ -1491,7 +1491,7 @@ func defaultCodexModelIDsForPlatform(platform string) []string {
 func defaultModelIDsForPlatform(platform string) []string {
 	switch platform {
 	case service.PlatformOpenAI:
-		return openai.DefaultModelIDs()
+		return openai.GatewayFallbackModelIDs()
 	case service.PlatformGemini:
 		ids := make([]string, 0, len(geminicli.DefaultModels))
 		for _, model := range geminicli.DefaultModels {

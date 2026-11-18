@@ -691,7 +691,7 @@ func TestGetAvailableModels_OpenAIPassthroughUsesDefaultFallback(t *testing.T) {
 					Extra:       map[string]any{"openai_passthrough": true},
 				},
 			},
-			want: dedupeAndSortModelIDs(append([]string{"configured-model"}, openai.DefaultModelIDs()...)),
+			want: dedupeAndSortModelIDs(append([]string{"configured-model"}, openai.GatewayFallbackModelIDs()...)),
 		},
 		{
 			name: "ordinary accounts preserve mapped whitelist",

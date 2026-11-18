@@ -1543,8 +1543,9 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 
 	// If no account has model_mapping, return nil (use default)
 	if !hasAnyMapping && platform == PlatformOpenAI {
-		models := filterRetiredOpenAIModelIDs(accounts, openai.DefaultModelIDs())
-		if len(models) != len(openai.DefaultModels) {
+		fallback := openai.GatewayFallbackModelIDs()
+		models := filterRetiredOpenAIModelIDs(accounts, fallback)
+		if len(models) != len(fallback) {
 			return models
 		}
 	}

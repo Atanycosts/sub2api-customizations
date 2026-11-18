@@ -40,7 +40,7 @@ func supplementUnmappedOpenAIModels(accounts []Account, models []string) []strin
 		account := &accounts[i]
 		unrestrictedPassthrough := account.IsOpenAIPassthroughEnabled() && !account.IsOpenAIPassthroughModelFilterEnabled()
 		if account.Platform == PlatformOpenAI && (unrestrictedPassthrough || len(account.GetModelMapping()) == 0) {
-			return dedupeAndSortModelIDs(slices.Concat(models, openai.DefaultModelIDs()))
+			return dedupeAndSortModelIDs(slices.Concat(models, openai.GatewayFallbackModelIDs()))
 		}
 	}
 	return models

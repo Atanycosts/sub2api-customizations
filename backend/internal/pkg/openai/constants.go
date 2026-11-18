@@ -56,6 +56,20 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
+// GatewayFallbackModelIDs is the legacy public catalog for accounts without
+// model configuration. A static fallback is not evidence of GPT-6.2 access.
+func GatewayFallbackModelIDs() []string {
+	ids := make([]string, 0, len(DefaultModels))
+	for _, model := range DefaultModels {
+		switch model.ID {
+		case "gpt-6.2-sol", "gpt-6.2-astra":
+			continue
+		}
+		ids = append(ids, model.ID)
+	}
+	return ids
+}
+
 // DefaultTestModel default model for testing OpenAI accounts
 const DefaultTestModel = "gpt-5.4"
 
