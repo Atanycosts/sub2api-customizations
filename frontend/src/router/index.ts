@@ -287,6 +287,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/pelican',
+    name: 'PelicanGallery',
+    component: () => import('@/views/user/PelicanView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Pelican Gallery',
+      titleKey: 'nav.pelican'
+    }
+  },
+  {
     path: '/settings/mcp',
     name: 'MCP',
     component: () => import('@/views/user/MCPView.vue'),
@@ -470,6 +481,24 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.audit.title',
       descriptionKey: 'admin.audit.description'
     }
+  },
+  {
+    path: '/admin/request-timings',
+    name: 'AdminRequestTimings',
+    component: () => import('@/views/admin/RequestTimingsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Request Timings', titleKey: 'nav.requestTimings' }
+  },
+  {
+    path: '/admin/gateway-operations',
+    name: 'AdminGatewayOperations',
+    component: () => import('@/views/admin/GatewayOperationsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Gateway Operations', titleKey: 'nav.gatewayOperations' }
+  },
+  {
+    path: '/admin/pelican-tests',
+    name: 'AdminPelicanTests',
+    component: () => import('@/views/admin/PelicanTestsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Pelican Tests', titleKey: 'nav.pelicanTests' }
   },
   {
     path: '/admin/users',

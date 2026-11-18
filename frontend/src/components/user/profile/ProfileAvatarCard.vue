@@ -1,81 +1,51 @@
 <template>
-  <div :class="props.embedded ? 'space-y-4' : 'card'">
-    <div
-      v-if="!props.embedded"
-      class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
-    >
-      <h2 class="text-lg font-medium text-gray-900 dark:text-white">
-        {{ t('profile.avatar.title') }}
-      </h2>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        {{ t('profile.avatar.description') }}
-      </p>
-    </div>
-
-    <div :class="props.embedded ? 'space-y-3' : 'flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-start'">
-      <div
-        :class="props.embedded
-          ? 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-xl font-bold text-white shadow-lg shadow-primary-500/20'
-          : 'flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-3xl font-bold text-white shadow-lg shadow-primary-500/20'"
-      >
+  <section class="profile-avatar-editor">
+    <div class="profile-avatar-controls">
+      <div class="profile-avatar-preview">
         <img
           v-if="avatarPreviewUrl"
           data-testid="profile-avatar-preview"
           :src="avatarPreviewUrl"
           :alt="displayName"
-          class="h-full w-full object-cover"
-        >
+        />
         <span v-else>{{ avatarInitial }}</span>
       </div>
-
-      <div :class="props.embedded ? 'space-y-3' : 'min-w-0 flex-1 space-y-4'">
-        <div class="space-y-1">
-          <p v-if="props.embedded" class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('profile.avatar.title') }}
-          </p>
-          <p v-else class="text-sm font-medium text-gray-900 dark:text-white">
-            {{ displayName }}
-          </p>
-          <p class="text-sm text-gray-500 dark:text-gray-400">
-            {{ t('profile.avatar.uploadHint') }}
-          </p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-          <label class="btn btn-secondary btn-sm cursor-pointer">
+      <div class="min-w-0">
+        <h3>{{ t('profile.avatar.title') }}</h3>
+        <div class="profile-avatar-actions">
+          <label class="btn btn-secondary btn-sm profile-upload">
             <input
               data-testid="profile-avatar-file-input"
               type="file"
               accept="image/*"
-              class="hidden"
+              class="sr-only"
               @change="handleAvatarFileChange"
-            >
+            />
             {{ t('profile.avatar.uploadAction') }}
           </label>
-
-          <button
-            data-testid="profile-avatar-save"
-            type="button"
-            class="btn btn-primary btn-sm"
-            :disabled="avatarSaving || !avatarDraft"
-            @click="handleAvatarSave"
-          >
-            {{ t('common.save') }}
-          </button>
-
           <button
             data-testid="profile-avatar-delete"
             type="button"
-            class="btn btn-secondary btn-sm"
+            class="profile-link"
             :disabled="avatarSaving"
             @click="handleAvatarDelete"
           >
             {{ t('common.delete') }}
           </button>
+          <button
+            data-testid="profile-avatar-save"
+            type="button"
+            class="profile-link"
+            :disabled="avatarSaving || !avatarDraft"
+            @click="handleAvatarSave"
+          >
+            {{ t('common.save') }}
+          </button>
         </div>
       </div>
     </div>
-  </div>
+    <p class="profile-avatar-hint">{{ t('profile.avatar.uploadHint') }}</p>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -87,12 +57,15 @@ import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-const props = withDefaults(defineProps<{
-  user: User | null
-  embedded?: boolean
-}>(), {
-  embedded: false,
-})
+const props = withDefaults(
+  defineProps<{
+    user: User | null
+    embedded?: boolean
+  }>(),
+  {
+    embedded: false
+  }
+)
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -104,9 +77,18 @@ const avatarQualitySteps = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarDraft = ref('')
 const avatarSaving = ref(false)
 
-const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
-const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
-const avatarPreviewUrl = computed(() => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || '')
+const displayName = computed(
+  () =>
+    props.user?.username?.trim() ||
+    props.user?.email?.trim() ||
+    t('profile.user')
+)
+const avatarInitial = computed(
+  () => displayName.value.charAt(0).toUpperCase() || 'U'
+)
+const avatarPreviewUrl = computed(
+  () => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || ''
+)
 
 watch(
   () => props.user?.avatar_url,
@@ -132,8 +114,10 @@ function normalizeUploadedAvatar(value: string): string | null {
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
-    reader.onerror = () => reject(reader.error ?? new Error('avatar_read_failed'))
+    reader.onload = () =>
+      resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('avatar_read_failed'))
     reader.readAsDataURL(file)
   })
 }
@@ -147,15 +131,23 @@ function loadImage(dataURL: string): Promise<HTMLImageElement> {
   })
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error(t('profile.avatar.compressFailed')))
-        return
-      }
-      resolve(blob)
-    }, type, quality)
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error(t('profile.avatar.compressFailed')))
+          return
+        }
+        resolve(blob)
+      },
+      type,
+      quality
+    )
   })
 }
 

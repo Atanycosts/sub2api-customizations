@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,7 @@ type helperConcurrencyCacheStub struct {
 	apiKeyTrackCalls    int
 	apiKeyReleaseCalls  int
 	apiKeyTrackIDs      []int64
+	accountAcquireDelay time.Duration
 }
 
 func (s *helperConcurrencyCacheStub) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -44,6 +46,9 @@ func (s *helperConcurrencyCacheStub) AcquireAccountSlot(ctx context.Context, acc
 	}
 	v := s.accountSeq[0]
 	s.accountSeq = s.accountSeq[1:]
+	if s.accountAcquireDelay > 0 {
+		time.Sleep(s.accountAcquireDelay)
+	}
 	return v, nil
 }
 
@@ -295,6 +300,66 @@ func TestAcquireUserSlotWithWait_ImmediateAcquireSkipsWaitQueue(t *testing.T) {
 	require.Equal(t, 0, cache.waitIncrementCalls)
 	require.Equal(t, 0, cache.waitDecrementCalls)
 	require.Equal(t, 1, cache.userReleaseCalls)
+}
+
+func TestOpenAISlotWaitTimingRecordsOnlyActualWait(t *testing.T) {
+	t.Run("immediate account slot has no wait span", func(t *testing.T) {
+		cache := &helperConcurrencyCacheStub{accountSeq: []bool{true}}
+		helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
+		c, _ := newHelperTestContext(http.MethodPost, "/v1/chat/completions")
+		traceCtx, collector := requesttiming.New(c.Request.Context(), "immediate", "/v1/chat/completions")
+		c.Request = c.Request.WithContext(traceCtx)
+		streamStarted := false
+
+		release, err := helper.AcquireAccountSlotWithWaitTimeout(c, 301, 1, time.Second, false, &streamStarted)
+		require.NoError(t, err)
+		require.NotNil(t, release)
+		release()
+
+		trace := collector.Finish(http.StatusOK, false)
+		require.Empty(t, trace.Admission)
+	})
+
+	t.Run("user wait records the real span", func(t *testing.T) {
+		cache := &helperConcurrencyCacheStub{userSeq: []bool{false, true}, waitAllowed: true}
+		helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
+		c, _ := newHelperTestContext(http.MethodPost, "/v1/chat/completions")
+		traceCtx, collector := requesttiming.New(c.Request.Context(), "user-wait", "/v1/chat/completions")
+		c.Request = c.Request.WithContext(traceCtx)
+		streamStarted := false
+
+		release, err := helper.AcquireUserSlotWithWait(c, 202, 3, false, &streamStarted)
+		require.NoError(t, err)
+		require.NotNil(t, release)
+		release()
+
+		trace := collector.Finish(http.StatusOK, false)
+		require.Len(t, trace.Admission, 1)
+		require.Equal(t, "user", trace.Admission[0].Kind)
+		require.Greater(t, trace.Admission[0].EndMS, trace.Admission[0].StartMS)
+	})
+
+	t.Run("account wait records the real span", func(t *testing.T) {
+		cache := &helperConcurrencyCacheStub{
+			accountSeq:          []bool{false, true},
+			accountAcquireDelay: 50 * time.Millisecond,
+		}
+		helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, 5*time.Millisecond)
+		c, _ := newHelperTestContext(http.MethodPost, "/v1/chat/completions")
+		traceCtx, collector := requesttiming.New(c.Request.Context(), "account-wait", "/v1/chat/completions")
+		c.Request = c.Request.WithContext(traceCtx)
+		streamStarted := false
+
+		release, err := helper.AcquireAccountSlotWithWaitTimeout(c, 301, 1, time.Second, false, &streamStarted)
+		require.NoError(t, err)
+		require.NotNil(t, release)
+		release()
+
+		trace := collector.Finish(http.StatusOK, false)
+		require.Len(t, trace.Admission, 1)
+		require.Equal(t, "account", trace.Admission[0].Kind)
+		require.GreaterOrEqual(t, trace.Admission[0].EndMS-trace.Admission[0].StartMS, 45.0)
+	})
 }
 
 func TestAcquireUserSlotWithWait_TracksAPIKeySlot(t *testing.T) {

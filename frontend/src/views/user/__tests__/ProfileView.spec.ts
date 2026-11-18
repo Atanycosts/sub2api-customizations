@@ -1,19 +1,18 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent } from 'vue'
 import ProfileView from '@/views/user/ProfileView.vue'
 
-const {
-  fetchPublicSettingsMock,
-  refreshUserMock,
-  authState
-} = vi.hoisted(() => ({
-  fetchPublicSettingsMock: vi.fn(),
-  refreshUserMock: vi.fn(),
-  authState: {
-    user: null as Record<string, unknown> | null,
-    refreshUser: vi.fn()
-  }
-}))
+const { fetchPublicSettingsMock, refreshUserMock, authState } = vi.hoisted(
+  () => ({
+    fetchPublicSettingsMock: vi.fn(),
+    refreshUserMock: vi.fn(),
+    authState: {
+      user: null as Record<string, unknown> | null,
+      refreshUser: vi.fn()
+    }
+  })
+)
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authState
@@ -73,16 +72,36 @@ describe('ProfileView', () => {
     })
   })
 
-  it('renders the simplified single-column profile shell without separate stat cards', async () => {
+  it('uses one tab layer and respects globally disabled notifications', async () => {
     const wrapper = mount(ProfileView, {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
           StatCard: { template: '<div class="stat-card" />' },
-          ProfileInfoCard: { template: '<div data-testid="profile-info-card" />' },
-          ProfileBalanceNotifyCard: { template: '<div data-testid="profile-balance-notify-card" />' },
-          ProfilePasswordForm: { template: '<div data-testid="profile-password-form" />' },
-          ProfileTotpCard: { template: '<div data-testid="profile-totp-card" />' },
+          ProfileInfoCard: defineComponent({
+            setup(_, { expose }) {
+              expose({ sourceHints: [] })
+              return {}
+            },
+            template: '<div data-testid="profile-info-card" />'
+          }),
+          ProfileAvatarCard: true,
+          ProfileEditForm: true,
+          ProfileIdentityBindingsSection: true,
+          ProfilePasskeyCard: true,
+          BaseDialog: {
+            props: ['show'],
+            template: '<div v-if="show"><slot /></div>'
+          },
+          ProfileBalanceNotifyCard: {
+            template: '<div data-testid="profile-balance-notify-card" />'
+          },
+          ProfilePasswordForm: {
+            template: '<div data-testid="profile-password-form" />'
+          },
+          ProfileTotpCard: {
+            template: '<div data-testid="profile-totp-card" />'
+          },
           Icon: true
         }
       }
@@ -92,8 +111,15 @@ describe('ProfileView', () => {
 
     expect(wrapper.findAll('.stat-card')).toHaveLength(0)
     expect(wrapper.get('[data-testid="profile-shell"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-info-card')
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-password-form')
-    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-totp-card')
+    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain(
+      'profile-info-card'
+    )
+    expect(wrapper.findAll('[role="tablist"]').length).toBe(1)
+    expect(wrapper.findAll('[role="tab"]').length).toBe(3)
+    await wrapper.get('#profile-tab-security').trigger('click')
+    expect(wrapper.get('#profile-panel-security').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain(
+      'profile-totp-card'
+    )
   })
 })

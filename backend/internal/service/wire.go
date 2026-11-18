@@ -859,8 +859,23 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideGatewayOperationsService(repo GatewayOperationsRepository, encryptor GatewayOperationsEncryptor, accounts AccountRepository, tests *AccountTestService, billing *BillingService, notifications *NotificationEmailService) *GatewayOperationsService {
+	s := NewGatewayOperationsService(repo, encryptor, accounts, tests, billing, notifications)
+	s.Start(context.Background())
+	return s
+}
+
+func ProvidePelicanService(repo PelicanRepository, groups GroupRepository, keys *APIKeyService, gateway *OpenAIGatewayService, billing *BillingService, concurrency *ConcurrencyService) *PelicanService {
+	s := NewPelicanService(repo, groups, keys, gateway, billing, concurrency)
+	s.Start()
+	return s
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewRequestTimingService,
+	ProvideGatewayOperationsService,
+	ProvidePelicanService,
 	ProvideMemoryGateway,
 	// Core services
 	ProvideAuthService,
@@ -994,7 +1009,14 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
+	NewUsageBillingLaneCombiner,
+	ProvideUsageBillingRepository,
 )
+
+// ProvideUsageBillingRepository 以按用户合并结算的通道作为各服务使用的计费仓储。
+func ProvideUsageBillingRepository(lanes *UsageBillingLaneCombiner) UsageBillingRepository {
+	return lanes
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

@@ -115,6 +115,29 @@ func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Co
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (r stubOpenAIAccountRepo) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, _ bool) ([]Account, error) {
+	if groupID != nil {
+		accounts := make([]Account, 0, len(r.accounts))
+		for _, platform := range platforms {
+			matches, err := r.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+			if err != nil {
+				return nil, err
+			}
+			accounts = append(accounts, matches...)
+		}
+		return accounts, nil
+	}
+	accounts := make([]Account, 0, len(r.accounts))
+	for _, platform := range platforms {
+		matches, err := r.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, matches...)
+	}
+	return accounts, nil
+}
+
 func TestOpenAIGatewayService_ForwardAsAnthropic_CapacityShedReturnsRequestScopedFailoverWithoutCommit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -226,6 +249,20 @@ func TestFailoverOpenAIUpstreamHTTPError_NilContextSkipsTempUnschedulablePolicy(
 
 type groupAwareStubOpenAIAccountRepo struct {
 	stubOpenAIAccountRepo
+}
+
+func (r groupAwareStubOpenAIAccountRepo) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, _ bool) ([]Account, error) {
+	platformSet := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		platformSet[platform] = struct{}{}
+	}
+	var result []Account
+	for _, acc := range r.accounts {
+		if _, ok := platformSet[acc.Platform]; ok && openAIStickyAccountMatchesGroup(&acc, groupID) {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
 }
 
 func (r groupAwareStubOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {

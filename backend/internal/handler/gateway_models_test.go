@@ -302,7 +302,7 @@ func TestGatewayCodexModels_CompositeUsesCompleteEffectiveModelList(t *testing.T
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got codexModelsResponseForTest
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	want := service.FilterCodexModelIDsForGroup(openai.DefaultModelIDs(), nil)
+	want := service.FilterCodexModelIDsForGroup(openai.GatewayFallbackModelIDs(), nil)
 	require.ElementsMatch(t, append(want, "grok-4.6"), codexModelSlugsForTest(got.Models))
 }
 
@@ -325,7 +325,7 @@ func TestGatewayModels_UnmappedOpenAIAccountsSupplementMappedModels(t *testing.T
 		},
 	}
 	subscriptionDefaults := make([]string, 0)
-	for _, model := range openai.DefaultModelIDs() {
+	for _, model := range openai.GatewayFallbackModelIDs() {
 		if model != "gpt-5.5" {
 			subscriptionDefaults = append(subscriptionDefaults, model)
 		}
@@ -344,7 +344,7 @@ func TestGatewayModels_UnmappedOpenAIAccountsSupplementMappedModels(t *testing.T
 		{
 			name:     "unmapped API key account also contributes defaults",
 			accounts: append([]service.Account{{ID: 4, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}}, accounts[1:]...),
-			want:     append(openai.DefaultModelIDs(), alias),
+			want:     append(openai.GatewayFallbackModelIDs(), alias),
 		},
 		{
 			name:     "unmapped accounts alone retain default response shape",
@@ -419,6 +419,68 @@ func TestGatewayModels_UnmappedOpenAIAccountsSupplementMappedModels(t *testing.T
 	require.Empty(t, accounts[0].GetModelMapping())
 	require.True(t, accounts[0].IsModelSupported("gpt-future-model"))
 	require.False(t, accounts[1].IsModelSupported("gpt-5.6-sol"))
+}
+
+func TestGatewayModels_GPT62RequiresCatalogEvidence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	const groupID int64 = 31
+	const sol = "gpt-6.2-sol"
+	const astra = "gpt-6.2-astra"
+	const existing = "gpt-6.1-sol"
+	passthrough := service.Account{
+		ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{"openai_passthrough": true, "openai_responses_mode": "preserve_inbound"},
+	}
+	mapped := service.Account{
+		ID: 2, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"model_mapping": map[string]any{sol: sol}},
+	}
+	for _, tc := range []struct {
+		name     string
+		accounts []service.Account
+		wantSol  bool
+	}{
+		{name: "unrestricted passthrough", accounts: []service.Account{passthrough}},
+		{name: "mixed pool with explicit Sol", accounts: []service.Account{passthrough, mapped}, wantSol: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{groupID: tc.accounts}}
+			h := newGatewayModelsHandlerForTest(repo)
+			group := &service.Group{ID: groupID, Platform: service.PlatformOpenAI}
+			checkIDs := func(ids []string) {
+				require.Contains(t, ids, existing)
+				require.NotContains(t, ids, astra)
+				if tc.wantSol {
+					require.Contains(t, ids, sol)
+				} else {
+					require.NotContains(t, ids, sol)
+				}
+			}
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+			c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{Group: group})
+			h.Models(c)
+			require.Equal(t, http.StatusOK, rec.Code)
+			var listed gatewayModelsResponseForTest
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+			checkIDs(modelIDsForTest(listed.Data))
+
+			upstream := service.NewOpenAIGatewayService(
+				repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+				nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			)
+			manifest, configured, err := upstream.BuildGroupConfiguredCodexModelsManifest(context.Background(), group, "")
+			require.NoError(t, err)
+			require.Equal(t, tc.wantSol, configured)
+			if configured {
+				var codex codexModelsResponseForTest
+				require.NoError(t, json.Unmarshal(manifest.Body, &codex))
+				checkIDs(codexModelSlugsForTest(codex.Models))
+			}
+		})
+	}
+	require.True(t, passthrough.IsModelSupported(astra), "listing must not change passthrough routing")
 }
 
 func TestGatewayCodexModels_GeneratedManifestUsesFinalBodyETag(t *testing.T) {

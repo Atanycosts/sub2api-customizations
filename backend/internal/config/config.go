@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/sysutil"
 	"github.com/spf13/viper"
 	"golang.org/x/net/http/httpguts"
 )
@@ -566,6 +567,24 @@ func shouldApplyLegacyWeChatEnv(configKey, envKey string) bool {
 	return !hasNewEnv
 }
 
+// detectMemoryLimitBytes is replaced in tests so defaults do not depend on the host.
+var detectMemoryLimitBytes = sysutil.MemoryLimitBytes
+
+const (
+	defaultRequestBodyMemoryBudgetBytes = int64(1 << 30)
+	// requestBodyMemoryBudgetDivisor leaves the rest of memory for conversion
+	// state, SSE buffers, caches and GC headroom.
+	requestBodyMemoryBudgetDivisor = 4
+)
+
+// autoRequestBodyMemoryBudget sizes the unconfigured ingress budget to a
+// quarter of the process memory limit. It never goes below the historical
+// 1 GiB default, so small instances keep their previous behavior.
+func autoRequestBodyMemoryBudget(memoryLimitBytes uint64) int64 {
+	// uint64 / 4 always fits in int64.
+	return max(int64(memoryLimitBytes/requestBodyMemoryBudgetDivisor), defaultRequestBodyMemoryBudgetBytes)
+}
+
 func hasExplicitConfigOrEnv(configKey, envKey string) bool {
 	if viper.InConfig(configKey) {
 		return true
@@ -1007,7 +1026,7 @@ type CircuitBreakerConfig struct {
 }
 
 type ConcurrencyConfig struct {
-	// PingInterval: 并发等待期间的 SSE ping 间隔（秒）
+	// PingInterval: 并发等待期间的 SSE ping 间隔（秒），0 禁用 ping
 	PingInterval int `mapstructure:"ping_interval"`
 }
 
@@ -1022,6 +1041,17 @@ type ImageConcurrencyConfig struct {
 	WaitTimeoutSeconds int `mapstructure:"wait_timeout_seconds"`
 	// MaxWaitingRequests: overflow_mode=wait 时当前进程允许排队等待的图片请求数
 	MaxWaitingRequests int `mapstructure:"max_waiting_requests"`
+}
+
+type OpenAIRequestBudgetConfig struct {
+	// These budgets cover HTTP Chat/Responses, not Messages or WebSocket turns.
+	// UploadTimeoutSeconds bounds upstream request uploads. The deadline is
+	// shared by all attempts in one inbound request; 0 disables it.
+	UploadTimeoutSeconds int `mapstructure:"upload_timeout_seconds"`
+	// PreOutputTimeoutSeconds bounds the wait for the first complete semantic
+	// content event, shared by all attempts. Metadata, role, usage, terminal-only
+	// events and heartbeat bytes do not satisfy it; 0 disables it.
+	PreOutputTimeoutSeconds int `mapstructure:"pre_output_timeout_seconds"`
 }
 
 const (
@@ -1049,9 +1079,12 @@ type GatewayConfig struct {
 	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
 	// 0 表示回退到 OpenAIFirstOutputTimeoutSeconds。
 	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
+	// OpenAIRequestBudget 是请求级共享的上游上传/首语义预算；默认关闭。
+	OpenAIRequestBudget OpenAIRequestBudgetConfig `mapstructure:"openai_request_budget"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// RequestBodyMemoryBudgetBytes bounds buffered ingress allocations per instance; 0 disables it.
+	// When unset in config and env it defaults to 1/4 of the memory limit (at least 1 GiB).
 	RequestBodyMemoryBudgetBytes int64 `mapstructure:"request_body_memory_budget_bytes"`
 	// RequestBodyReadTimeoutSeconds bounds each socket read during upload; 0 disables it.
 	RequestBodyReadTimeoutSeconds int `mapstructure:"request_body_read_timeout_seconds"`
@@ -1936,6 +1969,15 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		cfg.Security.ForwardedClientIPHeaders = normalizeStringSlice(strings.Split(forwardedClientIPHeadersEnv, ","))
 	}
 	cfg.Server.TrustedProxiesConfigured = trustedProxiesConfigured
+	// Mirror viper's own precedence: an empty environment variable is ignored by
+	// viper, so it must not pin the static default either (e.g. Compose ${VAR:-}).
+	if !viper.InConfig("gateway.request_body_memory_budget_bytes") && os.Getenv("GATEWAY_REQUEST_BODY_MEMORY_BUDGET_BYTES") == "" {
+		memoryLimit := detectMemoryLimitBytes()
+		cfg.Gateway.RequestBodyMemoryBudgetBytes = autoRequestBodyMemoryBudget(memoryLimit)
+		slog.Info("gateway.request_body_memory_budget_bytes auto-sized from memory limit",
+			"budget_bytes", cfg.Gateway.RequestBodyMemoryBudgetBytes,
+			"memory_limit_bytes", memoryLimit)
+	}
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 15000
 	}
@@ -2508,6 +2550,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_request_budget.upload_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_request_budget.pre_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
@@ -2610,7 +2654,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
-	viper.SetDefault("gateway.request_body_memory_budget_bytes", int64(1024*1024*1024))
+	// Without explicit config or env, load() replaces this with a size derived
+	// from the memory limit (see autoRequestBodyMemoryBudget).
+	viper.SetDefault("gateway.request_body_memory_budget_bytes", defaultRequestBodyMemoryBudgetBytes)
 	viper.SetDefault("gateway.request_body_read_timeout_seconds", 120)
 	viper.SetDefault("gateway.downstream_write_timeout_seconds", 120)
 	viper.SetDefault("gateway.text_max_body_size", int64(32*1024*1024))
@@ -3487,6 +3533,12 @@ func (c *Config) Validate() error {
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
 	}
+	if c.Gateway.OpenAIRequestBudget.UploadTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_request_budget.upload_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIRequestBudget.PreOutputTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_request_budget.pre_output_timeout_seconds must be non-negative")
+	}
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {
 		c.Gateway.Live.MaxSessionDurationSeconds = 3600
 	}
@@ -3874,8 +3926,8 @@ func (c *Config) Validate() error {
 	if c.Ops.Cleanup.Enabled && strings.TrimSpace(c.Ops.Cleanup.Schedule) == "" {
 		return fmt.Errorf("ops.cleanup.schedule is required when ops.cleanup.enabled=true")
 	}
-	if c.Concurrency.PingInterval < 5 || c.Concurrency.PingInterval > 30 {
-		return fmt.Errorf("concurrency.ping_interval must be between 5-30 seconds")
+	if c.Concurrency.PingInterval != 0 && (c.Concurrency.PingInterval < 5 || c.Concurrency.PingInterval > 30) {
+		return fmt.Errorf("concurrency.ping_interval must be 0 (disabled) or between 5-30 seconds")
 	}
 	if c.Gateway.Grok.FreeQuotaSoftGateEnabled {
 		if c.Gateway.Grok.FreeQuotaTokenLimit <= 0 {

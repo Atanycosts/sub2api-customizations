@@ -34,6 +34,18 @@ func (r *thresholdSelectionAccountRepoStub) ListSchedulableUngroupedByPlatform(c
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (r *thresholdSelectionAccountRepoStub) ListModelAvailabilityCandidates(ctx context.Context, _ *int64, platforms []string, _ bool) ([]Account, error) {
+	accounts := make([]Account, 0, len(r.accounts))
+	for _, platform := range platforms {
+		matches, err := r.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, matches...)
+	}
+	return accounts, nil
+}
+
 func TestGatewayService_ListSchedulableAccounts_DoesNotFilterUnsupportedThresholdPlatforms(t *testing.T) {
 	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
 	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})

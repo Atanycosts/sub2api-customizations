@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -30,9 +31,19 @@ var (
 )
 
 type openAIResponsesRejectedFieldRetryState struct {
-	mu             sync.Mutex
-	budget         *openAIResponsesRejectedFieldRetryBudget
-	seenBodyHashes map[[sha256.Size]byte]struct{}
+	mu               sync.Mutex
+	budget           *openAIResponsesRejectedFieldRetryBudget
+	seenBodyHashes   map[[sha256.Size]byte]struct{}
+	requireOutputCap bool
+}
+
+type openAIOutputCapRequiredContextKey struct{}
+
+// WithOpenAIOutputCapRequired keeps bounded internal generation requests from
+// retrying a rejected Responses request after removing max_output_tokens.
+// Ordinary gateway requests retain their existing compatibility behavior.
+func WithOpenAIOutputCapRequired(ctx context.Context) context.Context {
+	return context.WithValue(ctx, openAIOutputCapRequiredContextKey{}, true)
 }
 
 type openAIResponsesRejectedFieldRetryBudget struct {
@@ -59,7 +70,11 @@ func openAIResponsesRejectedFieldRetryStateForRequest(c *gin.Context, initialBod
 			c.Set(openAIResponsesRejectedFieldRetryBudgetContextKey, budget)
 		}
 	}
-	return newOpenAIResponsesRejectedFieldRetryStateWithBudget(initialBody, budget)
+	state := newOpenAIResponsesRejectedFieldRetryStateWithBudget(initialBody, budget)
+	if c != nil && c.Request != nil {
+		state.requireOutputCap, _ = c.Request.Context().Value(openAIOutputCapRequiredContextKey{}).(bool)
+	}
+	return state
 }
 
 func newOpenAIResponsesRejectedFieldRetryState(initialBody []byte) *openAIResponsesRejectedFieldRetryState {
@@ -77,6 +92,9 @@ func newOpenAIResponsesRejectedFieldRetryStateWithBudget(initialBody []byte, bud
 
 func (s *openAIResponsesRejectedFieldRetryState) Allow(nextBody []byte) bool {
 	if s == nil || s.budget == nil || len(nextBody) == 0 {
+		return false
+	}
+	if s.requireOutputCap && !gjson.GetBytes(nextBody, "max_output_tokens").Exists() {
 		return false
 	}
 	s.mu.Lock()

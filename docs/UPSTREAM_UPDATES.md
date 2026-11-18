@@ -1,7 +1,7 @@
 # Updating from Upstream
 
 This repository keeps the original Sub2API history in the `upstream` remote and
-stores custom changes on the private `origin` remote.
+stores custom changes on the `origin` remote (`Atanycosts/sub2api-customizations`).
 
 ## Update procedure
 
@@ -29,7 +29,7 @@ Run the frontend production build and test suite, plus the relevant Go tests
 database migrations and the account-memory behavior when an update touches
 either area. Keep deployment as a separate, deliberate step after review.
 
-Push the reviewed update branch to the private repository and merge it into
+Push the reviewed update branch to the customization repository and merge it into
 `main` after checks pass:
 
 ```sh
@@ -41,11 +41,13 @@ fork. Keep deployment secrets and runtime data out of Git.
 
 ## Current baseline
 
-The custom branch was reconnected to upstream commit `876b96d20` (2026-11-04)
-and subsequently merged with `upstream/main` at `6b4b37db4` on 2026-11-07
-(v0.2.20 plus its version-file update). This adds the GPT-6.1 Terra Codex
-descriptor, effort validation, compatibility cache keys, and subscription
-long-context billing fixes while retaining the UI and account-memory
-customizations. The original imported snapshot and pre-update worktree are
-preserved locally under `backup/pre-upstream-20261107`. Production deployment
-status is tracked separately in `docs/DEPLOYMENT.md`.
+The gateway release branch includes `v0.2.23` (`5af9afb58`) and the following
+version-file commit `2af3f1e15`. This adds GPT-6.2 Sol and Astra, their Codex
+descriptors and pricing, and upstream stream and cache-accounting fixes. The
+original same-protocol routing and request timing remain in place.
+
+Migration history is keyed by the full SQL filename and checksum. The upstream
+`252_channel_pricing_ultrafast_multiplier.sql` and the existing
+`252_gateway_request_timings.sql` are distinct migrations; preserve both names
+and the bytes of previously applied files. Production deployment status is
+tracked separately in `docs/DEPLOYMENT.md`.

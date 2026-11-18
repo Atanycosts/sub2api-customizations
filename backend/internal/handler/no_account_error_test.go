@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,30 @@ func TestClassifySelectionFailureError_RateLimitedPool(t *testing.T) {
 	require.Contains(t, got.Message, "rate-limited")
 	require.Equal(t, fallback, classifySelectionFailureError(fmt.Errorf("model_rate_limited=0"), fallback))
 	require.Equal(t, fallback, classifySelectionFailureError(fmt.Errorf("no available accounts"), fallback))
+}
+
+func TestClassifySelectionFailureError_TypedRateLimitCarriesRetryAfter(t *testing.T) {
+	fallback := noAccountErrorClassification{Status: http.StatusServiceUnavailable, ErrType: "api_error", Message: "Service temporarily unavailable"}
+	rateLimited := &service.OpenAIRateLimitedAdmissionError{
+		RequestedModel:       "deepseek-v4-pro",
+		TemporaryRateLimited: 2,
+		ReasonCounts:         map[string]int{"not_schedulable": 2},
+		EarliestRetryAt:      time.Now().Add(5*time.Second + 250*time.Millisecond),
+	}
+
+	got := classifySelectionFailureError(fmt.Errorf("selection: %w", rateLimited), fallback)
+
+	require.Equal(t, http.StatusTooManyRequests, got.Status)
+	require.Equal(t, "rate_limit_error", got.ErrType)
+	require.GreaterOrEqual(t, got.RetryAfter, 5)
+	require.LessOrEqual(t, got.RetryAfter, 6)
+	require.ErrorIs(t, fmt.Errorf("selection: %w", rateLimited), service.ErrNoAvailableAccounts)
+}
+
+func TestApplyNoAccountRetryAfter(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	applyNoAccountRetryAfter(c, noAccountErrorClassification{RetryAfter: 17})
+	require.Equal(t, "17", c.Writer.Header().Get("Retry-After"))
 }
 
 func TestClassifyNoAccountError_NilAPIKey_Falls503(t *testing.T) {

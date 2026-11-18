@@ -321,6 +321,138 @@ func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool,
 	return openAINoAvailableSelectionError{message: message}
 }
 
+// OpenAIRateLimitedAdmissionError means every otherwise eligible candidate in
+// the evaluated snapshot was excluded solely by a temporary account-level rate
+// limit. It is an admission verdict, not an upstream response.
+type OpenAIRateLimitedAdmissionError struct {
+	RequestedModel       string
+	TemporaryRateLimited int
+	ReasonCounts         map[string]int
+	EarliestRetryAt      time.Time
+}
+
+func (e *OpenAIRateLimitedAdmissionError) Error() string {
+	if e == nil {
+		return "no available OpenAI accounts: temporarily rate limited"
+	}
+	return fmt.Sprintf(
+		"no available OpenAI accounts supporting model %s: all %d otherwise eligible candidates are temporarily rate limited",
+		e.RequestedModel,
+		e.TemporaryRateLimited,
+	)
+}
+
+func (e *OpenAIRateLimitedAdmissionError) Unwrap() error {
+	return ErrNoAvailableAccounts
+}
+
+// RetryAfterSeconds returns a positive whole-second delay derived from the
+// earliest known recovery time in the same candidate snapshot.
+func (e *OpenAIRateLimitedAdmissionError) RetryAfterSeconds(now time.Time) int {
+	if e == nil || e.EarliestRetryAt.IsZero() || !e.EarliestRetryAt.After(now) {
+		return 0
+	}
+	seconds := int(e.EarliestRetryAt.Sub(now) / time.Second)
+	if e.EarliestRetryAt.Sub(now)%time.Second != 0 {
+		seconds++
+	}
+	return max(seconds, 1)
+}
+
+type openAIAdmissionExclusionSnapshot struct {
+	temporaryRateLimited int
+	earliestRetryAt      time.Time
+}
+
+func (s *openAIAdmissionExclusionSnapshot) addTemporaryRateLimit(retryAt time.Time) {
+	if s == nil || retryAt.IsZero() {
+		return
+	}
+	s.temporaryRateLimited++
+	if s.earliestRetryAt.IsZero() || retryAt.Before(s.earliestRetryAt) {
+		s.earliestRetryAt = retryAt
+	}
+}
+
+func (s openAIAdmissionExclusionSnapshot) exclusiveTemporaryRateLimit(filterStats openAISelectionFilterStats) bool {
+	if s.temporaryRateLimited <= 0 {
+		return false
+	}
+	totalExcluded := 0
+	for _, count := range filterStats.reasons {
+		totalExcluded += count
+	}
+	return totalExcluded == s.temporaryRateLimited
+}
+
+func noAvailableOpenAISelectionErrorWithSnapshot(
+	requestedModel string,
+	compactBlocked bool,
+	filterStats openAISelectionFilterStats,
+	admission openAIAdmissionExclusionSnapshot,
+) error {
+	if !compactBlocked && admission.exclusiveTemporaryRateLimit(filterStats) {
+		reasons := make(map[string]int, len(filterStats.reasons))
+		for reason, count := range filterStats.reasons {
+			reasons[reason] = count
+		}
+		return &OpenAIRateLimitedAdmissionError{
+			RequestedModel:       requestedModel,
+			TemporaryRateLimited: admission.temporaryRateLimited,
+			ReasonCounts:         reasons,
+			EarliestRetryAt:      admission.earliestRetryAt,
+		}
+	}
+	return noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary(""))
+}
+
+// openAIAccountTemporary429RetryAt reports a rate-limit deadline only when the
+// account otherwise passes the request-level static gates. Model cooldowns,
+// overload, auth/transport pauses, manual disablement and capability failures
+// are deliberately not classified as account-level 429.
+func openAIAccountTemporary429RetryAt(
+	ctx context.Context,
+	account *Account,
+	platform string,
+	requestedModel string,
+	requireCompact bool,
+	requiredCapability OpenAIEndpointCapability,
+) (time.Time, bool) {
+	if account == nil || account.RateLimitResetAt == nil {
+		return time.Time{}, false
+	}
+	now := time.Now()
+	retryAt := *account.RateLimitResetAt
+	if !retryAt.After(now) || !account.IsActive() || !account.Schedulable {
+		return time.Time{}, false
+	}
+	if account.AutoPauseOnExpired && account.ExpiresAt != nil && !now.Before(*account.ExpiresAt) {
+		return time.Time{}, false
+	}
+	if account.OverloadUntil != nil && now.Before(*account.OverloadUntil) {
+		return time.Time{}, false
+	}
+	if account.TempUnschedulableUntil != nil && now.Before(*account.TempUnschedulableUntil) {
+		return time.Time{}, false
+	}
+	if account.SupportsAccountQuota() && account.IsQuotaExceeded() {
+		return time.Time{}, false
+	}
+	if account.Platform != NormalizeOpenAICompatiblePlatform(platform) || !account.IsOpenAICompatible() {
+		return time.Time{}, false
+	}
+	if account.GetRateLimitRemainingTimeWithContext(ctx, requestedModel) > 0 {
+		return time.Time{}, false
+	}
+	if requestedModel != "" && !supportsOpenAIRequestModel(account, requestedModel, requireCompact) {
+		return time.Time{}, false
+	}
+	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
+		return time.Time{}, false
+	}
+	return retryAt, true
+}
+
 type openAINoAvailableSelectionError struct {
 	message string
 }
@@ -930,10 +1062,10 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusionsStickyHit(ctx 
 
 	// 3. 按优先级 + LRU 选择最佳账号
 	// Select by priority + LRU
-	selected, compactBlocked, filterStats := s.selectBestAccount(ctx, groupID, platform, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate)
+	selected, compactBlocked, filterStats, admission := s.selectBestAccount(ctx, groupID, platform, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate)
 
 	if selected == nil {
-		return nil, false, noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary(""))
+		return nil, false, noAvailableOpenAISelectionErrorWithSnapshot(requestedModel, compactBlocked, filterStats, admission)
 	}
 
 	hydrated, err := s.hydrateSelectedAccount(ctx, selected)
@@ -1027,10 +1159,11 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 // (only meaningful when the legacy /responses/compact requireCompact flag is
 // true); the third contains deterministic
 // exclusion diagnostics for the evaluated snapshot.
-func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, platform string, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, bool, openAISelectionFilterStats) {
+func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, platform string, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, bool, openAISelectionFilterStats, openAIAdmissionExclusionSnapshot) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	compactBlocked := false
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
+	admission := openAIAdmissionExclusionSnapshot{}
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	eligible := make([]*Account, 0, len(accounts))
 	compactTiers := make(map[int64]int, len(accounts))
@@ -1047,6 +1180,31 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 
 		fresh := s.resolveFreshSchedulableOpenAIAccountBeforeProfit(ctx, acc, platform, requestedModel, false, requiredCapability)
 		if fresh == nil {
+			if openAICompatibleAccountEligibilityFailureReasonBeforeProfit(
+				ctx,
+				acc,
+				platform,
+				requestedModel,
+				false,
+				requiredCapability,
+			) == "not_schedulable" {
+				if retryAt, ok := openAIAccountTemporary429RetryAt(
+					ctx,
+					acc,
+					platform,
+					requestedModel,
+					false,
+					requiredCapability,
+				); ok &&
+					parentHealthyForShadow(acc, s.parentAccountLookup(ctx)) &&
+					(!needsUpstreamCheck || !s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact)) &&
+					!s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, acc) &&
+					!s.isOpenAIProxyStreamQuarantined(ctx, acc) {
+					if vetoed, _ := openAIProfitControlVetoReason(ctx, acc); !vetoed {
+						admission.addTemporaryRateLimit(retryAt)
+					}
+				}
+			}
 			filterStats.exclude("ineligible")
 			continue
 		}
@@ -1078,7 +1236,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 	}
 
 	if len(eligible) == 0 {
-		return nil, compactBlocked, filterStats
+		return nil, compactBlocked, filterStats, admission
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}
 	if preferLowUpstreamRate {
@@ -1094,7 +1252,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		}
 		return s.isBetterAccount(a, b)
 	})
-	return eligible[0], compactBlocked, filterStats
+	return eligible[0], compactBlocked, filterStats, admission
 }
 
 // isBetterAccount 判断 candidate 是否比 current 更优。
@@ -1278,6 +1436,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 	baseCandidateCount := 0
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
+	admission := openAIAdmissionExclusionSnapshot{}
 	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
@@ -1289,6 +1448,24 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
 		if reason := openAICompatibleAccountEligibilityFailureReason(ctx, acc, platform, requestedModel, false, requiredCapability); reason != "" {
+			if reason == "not_schedulable" {
+				if retryAt, ok := openAIAccountTemporary429RetryAt(
+					ctx,
+					acc,
+					platform,
+					requestedModel,
+					false,
+					requiredCapability,
+				); ok &&
+					parentHealthyForShadow(acc, parentLookupL2) &&
+					(!needsUpstreamCheck || !s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact)) &&
+					!s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, acc) &&
+					!s.isOpenAIProxyStreamQuarantined(ctx, acc) {
+					if vetoed, _ := openAIProfitControlVetoReason(ctx, acc); !vetoed {
+						admission.addTemporaryRateLimit(retryAt)
+					}
+				}
+			}
 			filterStats.exclude(reason)
 			continue
 		}
@@ -1309,7 +1486,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
-		return nil, noAvailableOpenAISelectionError(requestedModel, false, filterStats.summary(""))
+		return nil, noAvailableOpenAISelectionErrorWithSnapshot(requestedModel, false, filterStats, admission)
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}
 	if preferLowUpstreamRate {
@@ -1505,28 +1682,50 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
-	if s.schedulerSnapshot != nil {
-		accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
+	var accounts []Account
+	if platform == PlatformOpenAI {
+		if s.schedulerSnapshot != nil {
+			var err error
+			accounts, err = s.schedulerSnapshot.ListOpenAIAdmissionAccounts(ctx, groupID, platform)
+			if err != nil {
+				return accounts, err
+			}
+		} else {
+			includeGrouped := s.cfg != nil && s.cfg.RunMode == config.RunModeSimple
+			if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+				groupID = nil
+			}
+			var err error
+			accounts, err = s.accountRepo.ListModelAvailabilityCandidates(ctx, groupID, []string{platform}, includeGrouped)
+			if err != nil {
+				return nil, fmt.Errorf("query accounts failed: %w", err)
+			}
+			accounts = compactOpenAIAdmissionAccounts(accounts, time.Now())
+		}
+	} else if s.schedulerSnapshot != nil {
+		var err error
+		accounts, _, err = s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
 		if err != nil {
 			return accounts, err
 		}
-		accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
-		if platform == PlatformGrok {
-			accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
-		}
-		return accounts, nil
-	}
-	var accounts []Account
-	var err error
-	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+	} else if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		var err error
 		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
 	} else if groupID != nil {
+		var err error
 		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
 	} else {
+		var err error
 		accounts, err = s.accountRepo.ListSchedulableUngroupedByPlatform(ctx, platform)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("query accounts failed: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
 	}
 	accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
 	if platform == PlatformGrok {

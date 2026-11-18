@@ -1,7 +1,15 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount as vueMount } from '@vue/test-utils'
 import TotpSetupModal from '@/components/user/profile/TotpSetupModal.vue'
 import TotpDisableDialog from '@/components/user/profile/TotpDisableDialog.vue'
+const mount: typeof vueMount = ((component: any, options: any = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      stubs: { ...options.global?.stubs, teleport: true, transition: false }
+    }
+  })) as typeof vueMount
 
 const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
@@ -66,7 +74,9 @@ describe('TOTP 弹窗定时器清理', () => {
     mocks.enable.mockResolvedValue({ success: true })
     mocks.disable.mockResolvedValue({ success: true })
 
-    setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((handler: TimerHandler) => {
+    setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((
+      handler: TimerHandler
+    ) => {
       void handler
       intervalSeed += 1
       return intervalSeed as unknown as number
@@ -79,17 +89,28 @@ describe('TOTP 弹窗定时器清理', () => {
     clearIntervalSpy.mockRestore()
   })
 
-  it.each([TotpSetupModal, TotpDisableDialog])('does not start a cooldown after unmounting during send', async (component) => {
-    let resolve!: (value: unknown) => void
-    mocks.sendVerifyCode.mockReturnValueOnce(new Promise(res => { resolve = res }))
-    const wrapper = mount(component)
-    await flushPromises()
-    await wrapper.findAll('button').find(b => b.text().includes('profile.totp.sendCode'))!.trigger('click')
-    wrapper.unmount()
-    resolve({ success: true }); await flushPromises()
-    expect(setIntervalSpy).not.toHaveBeenCalled()
-    expect(mocks.showSuccess).not.toHaveBeenCalled()
-  })
+  it.each([TotpSetupModal, TotpDisableDialog])(
+    'does not start a cooldown after unmounting during send',
+    async (component) => {
+      let resolve!: (value: unknown) => void
+      mocks.sendVerifyCode.mockReturnValueOnce(
+        new Promise((res) => {
+          resolve = res
+        })
+      )
+      const wrapper = mount(component)
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes('profile.totp.sendCode'))!
+        .trigger('click')
+      wrapper.unmount()
+      resolve({ success: true })
+      await flushPromises()
+      expect(setIntervalSpy).not.toHaveBeenCalled()
+      expect(mocks.showSuccess).not.toHaveBeenCalled()
+    }
+  )
 
   it('TotpSetupModal 卸载时清理倒计时定时器', async () => {
     const wrapper = mount(TotpSetupModal)
@@ -140,8 +161,10 @@ describe('TOTP 弹窗定时器清理', () => {
     const wrapper = mount(TotpSetupModal)
     await flushPromises()
 
-    await wrapper.get('input[type="password"]').setValue('correct horse battery staple')
-    await wrapper.get('button[type="button"].btn-primary').trigger('click')
+    await wrapper
+      .get('input[type="password"]')
+      .setValue('correct horse battery staple')
+    await wrapper.get('form').trigger('submit')
     await flushPromises()
 
     expect(mocks.showError).toHaveBeenCalledWith('setup failed')
@@ -158,7 +181,9 @@ describe('TOTP 弹窗定时器清理', () => {
     const wrapper = mount(TotpDisableDialog)
     await flushPromises()
 
-    await wrapper.get('input[type="password"]').setValue('correct horse battery staple')
+    await wrapper
+      .get('input[type="password"]')
+      .setValue('correct horse battery staple')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 

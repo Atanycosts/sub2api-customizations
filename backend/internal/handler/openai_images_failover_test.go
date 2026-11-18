@@ -27,6 +27,22 @@ type openAIImagesFailoverAccountRepo struct {
 	accounts []service.Account
 }
 
+func (r openAIImagesFailoverAccountRepo) ListModelAvailabilityCandidates(_ context.Context, _ *int64, platforms []string, _ bool) ([]service.Account, error) {
+	out := make([]service.Account, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		if account.Status != service.StatusActive || !account.Schedulable {
+			continue
+		}
+		for _, platform := range platforms {
+			if account.Platform == platform {
+				out = append(out, account)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (r openAIImagesFailoverAccountRepo) GetByID(_ context.Context, id int64) (*service.Account, error) {
 	for i := range r.accounts {
 		if r.accounts[i].ID == id {

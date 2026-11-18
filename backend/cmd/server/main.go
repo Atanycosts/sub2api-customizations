@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	_ "embed"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -59,10 +61,17 @@ func main() {
 	// Parse command line flags
 	setupMode := flag.Bool("setup", false, "Run setup wizard in CLI mode")
 	showVersion := flag.Bool("version", false, "Show version information")
+	migrateOnly := flag.Bool("migrate-only", false, "Apply embedded database migrations without starting services or workers")
 	flag.Parse()
 
 	if *showVersion {
 		log.Printf("Sub2API %s (commit: %s, built: %s)\n", Version, Commit, Date)
+		return
+	}
+	if *migrateOnly {
+		if err := runMigrationsOnly(); err != nil {
+			log.Fatalf("Migration check failed: %v", err)
+		}
 		return
 	}
 
@@ -92,6 +101,22 @@ func main() {
 
 	// Normal server mode
 	runMainServer()
+}
+
+func runMigrationsOnly() error {
+	cfg, err := config.LoadForBootstrap()
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("postgres", cfg.Database.DSNWithTimezone(cfg.Timezone))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(2)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return repository.ApplyMigrations(ctx, db)
 }
 
 func runSetupServer() {
@@ -185,7 +210,7 @@ func runMainServer() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {

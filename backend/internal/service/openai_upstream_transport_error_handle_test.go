@@ -268,6 +268,33 @@ func TestHandleOpenAIUpstreamTransportError_ContextCanceled_NoFailoverNoEviction
 	require.Equal(t, 0, rec.Body.Len())
 }
 
+func TestHandleOpenAIUpstreamTransportError_PreservesTypedBudgetError(t *testing.T) {
+	repo := &openaiTransportAccountRepoStub{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 177, Name: "budgeted", Platform: PlatformOpenAI}
+	c, rec := newOpenAITransportErrTestContext()
+	budgetErr := &OpenAIRequestBudgetError{Phase: OpenAIRequestBudgetPreOutput}
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.handleOpenAIUpstreamTransportError(
+		canceledCtx,
+		c,
+		account,
+		fmt.Errorf("request canceled while enforcing budget: %w", budgetErr),
+		false,
+	)
+
+	var got *OpenAIRequestBudgetError
+	require.ErrorAs(t, err, &got)
+	require.Equal(t, budgetErr, got)
+	var failover *UpstreamFailoverError
+	require.False(t, errors.As(err, &failover), "budget timeout must never be converted into failover")
+	require.Empty(t, repo.tempUnschedCalls)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 0, rec.Body.Len())
+}
+
 // context.Canceled wrapped inside another error must also avoid failover.
 func TestHandleOpenAIUpstreamTransportError_WrappedContextCanceled_NoFailover(t *testing.T) {
 	repo := &openaiTransportAccountRepoStub{}

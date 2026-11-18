@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -244,9 +245,9 @@ function accountLabel(row: OpsRequestDetail): string {
                     <span>{{ row.status_code ?? '-' }}</span>
                   </div>
                   <div v-if="row.request_id" class="flex items-center gap-2">
-                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
+                    <RouterLink :to="{ path: '/admin/request-timings', query: { request_id: row.request_id } }" class="min-w-0 flex-1 truncate font-mono text-[11px] text-primary-600 hover:underline dark:text-primary-400" :title="t('nav.requestTimings')">
                       {{ row.request_id }}
-                    </span>
+                    </RouterLink>
                     <button
                       class="shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                       @click="handleCopyRequestId(row.request_id)"
@@ -322,9 +323,9 @@ function accountLabel(row: OpsRequestDetail): string {
                   </td>
                   <td class="px-4 py-3">
                     <div v-if="row.request_id" class="flex items-center gap-2">
-                      <span class="max-w-[220px] truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
+                      <RouterLink :to="{ path: '/admin/request-timings', query: { request_id: row.request_id } }" class="max-w-[220px] truncate font-mono text-[11px] text-primary-600 hover:underline dark:text-primary-400" :title="t('nav.requestTimings')">
                         {{ row.request_id }}
-                      </span>
+                      </RouterLink>
                       <button
                         class="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                         @click="handleCopyRequestId(row.request_id)"

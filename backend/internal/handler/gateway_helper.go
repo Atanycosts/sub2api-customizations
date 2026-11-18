@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requesttiming"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -172,7 +173,7 @@ type ConcurrencyHelper struct {
 
 // NewConcurrencyHelper creates a new ConcurrencyHelper
 func NewConcurrencyHelper(concurrencyService *service.ConcurrencyService, pingFormat SSEPingFormat, pingInterval time.Duration) *ConcurrencyHelper {
-	if pingInterval <= 0 {
+	if pingInterval < 0 {
 		pingInterval = defaultPingInterval
 	}
 	return &ConcurrencyHelper{
@@ -380,7 +381,7 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 	}
 
 	// Determine if ping is needed (streaming + ping format defined)
-	needPing := isStream && h.pingFormat != ""
+	needPing := isStream && h.pingFormat != "" && h.pingInterval > 0
 
 	var flusher http.Flusher
 	if needPing {
@@ -399,6 +400,10 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 		pingCh = pingTicker.C
 	}
 
+	waitStart := time.Now()
+	defer func() {
+		requesttiming.Admission(ctx, slotType, waitStart, time.Now())
+	}()
 	backoff := initialBackoff
 	timer := time.NewTimer(backoff)
 	defer timer.Stop()

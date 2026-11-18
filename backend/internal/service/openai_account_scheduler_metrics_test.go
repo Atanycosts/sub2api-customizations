@@ -19,6 +19,11 @@ func (r schedulerLatencyAccountRepo) ListSchedulableUngroupedByPlatform(ctx cont
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (r schedulerLatencyAccountRepo) ListModelAvailabilityCandidates(ctx context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error) {
+	time.Sleep(20 * time.Millisecond)
+	return r.schedulerTestOpenAIAccountRepo.ListModelAvailabilityCandidates(ctx, groupID, platforms, includeGrouped)
+}
+
 func TestOpenAISchedulerSelectReturnsRealLatency(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)

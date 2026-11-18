@@ -9,6 +9,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCodexGPT62CatalogHonorsChannelPricing(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	const groupID int64 = 10
+	group := &Group{ID: groupID, Platform: PlatformOpenAI}
+	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"model_mapping": map[string]any{
+			"gpt-6.1-sol": "gpt-6.1-sol", "gpt-6.2-sol": "gpt-6.2-sol", "gpt-6.2-astra": "gpt-6.2-astra",
+		},
+	}}
+	channel := Channel{
+		ID: 1, Status: StatusActive, GroupIDs: []int64{groupID},
+		RestrictModels: true, BillingModelSource: BillingModelSourceRequested,
+		ModelPricing: []ChannelModelPricing{{Platform: PlatformOpenAI, Models: []string{"gpt-6.2-sol"}}},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:    codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{groupID: {account}}},
+		channelService: newTestChannelService(makeStandardRepo(channel, map[int64]string{groupID: PlatformOpenAI})),
+	}
+	expected := []string{"gpt-6.1-sol", "gpt-6.2-sol"}
+	local, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(ctx, group, "")
+	require.NoError(t, err)
+	require.True(t, configured)
+	require.Equal(t, expected, codexManifestModelSlugs(t, local.Body))
+
+	upstream := []byte(`{"models":[{"slug":"gpt-6.1-sol","extra":{"keep":true}},{"slug":"gpt-6.2-sol"},{"slug":"gpt-6.2-astra"}]}`)
+	manifest := &OpenAIModelsResponse{Body: upstream, ETag: codexModelsManifestBodyETag(upstream)}
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(ctx, group, manifest, ""))
+	require.Equal(t, expected, codexManifestModelSlugs(t, manifest.Body))
+	require.Equal(t, map[string]any{"keep": true}, decodeCodexManifestModels(t, manifest.Body)[0]["extra"])
+	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
+
+	cached := &OpenAIModelsResponse{Body: upstream, ETag: codexModelsManifestBodyETag(upstream)}
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(ctx, group, cached, manifest.ETag))
+	require.True(t, cached.NotModified)
+	require.Empty(t, cached.Body)
+}
+
 func TestOpenAISelectAccountForModelWithExclusions_ChannelMappedRestrictionRejectsEarly(t *testing.T) {
 	t.Parallel()
 

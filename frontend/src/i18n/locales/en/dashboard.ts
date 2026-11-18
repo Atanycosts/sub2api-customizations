@@ -653,6 +653,7 @@ export default {
       cacheWritePrice: 'Cache Write',
       cacheWrite5mPrice: 'Cache Write (5m)',
       cacheWrite1hPrice: 'Cache Write (1h)',
+      cacheWrite12hPrice: 'Cache Write (12h)',
       cacheReadPrice: 'Cache Read',
       imageInputPrice: 'Image Input',
       imageOutputPrice: 'Image Output',
@@ -821,6 +822,11 @@ export default {
 
   // Profile
   profile: {
+    manageShort: 'Manage',
+    tabs: { basics: 'Profile', bindings: 'Sign-in', notifications: 'Notifications' },
+    accountDetails: 'Account details',
+    bindingDetails: '{providerName} binding details',
+    bindShort: 'Bind',
     title: 'Profile Settings',
     description: 'Manage your account information and settings',
     accountBalance: 'Account Balance',
@@ -831,11 +837,11 @@ export default {
     overviewTitle: 'Account Overview',
     overviewDescription: 'Check account status, profile sources, and common actions at a glance.',
     basicsTitle: 'Profile & Avatar',
-    basicsDescription: 'Keep your public profile details and avatar aligned.',
+    basicsDescription: 'Manage your avatar, display name and contact details.',
     linkedProfileSources: 'Profile Sources',
     linkedProfileSourcesDescription: 'Some profile details may stay synced from third-party sign-in methods.',
     securityTitle: 'Security Settings',
-    securityDescription: 'Password, two-factor authentication, and alerts live in the right rail.',
+    securityDescription: 'Manage your password, two-factor authentication and Passkeys.',
     administrator: 'Administrator',
     user: 'User',
     username: 'Username',
@@ -862,6 +868,7 @@ export default {
     passwordChangeFailed: 'Failed to change password',
     // TOTP 2FA
     totp: {
+      codeDigit: 'Code digit {digit}',
       title: 'Two-Factor Authentication (2FA)',
       statusLoadFailed: 'Could not read your two-factor authentication status. Please try again.',
       description: 'Enhance account security with Google Authenticator or similar apps',
@@ -901,6 +908,8 @@ export default {
       sendCodeFailed: 'Failed to send verification code'
     },
     passkey: {
+      manage: 'Manage Passkeys',
+      count: '{count} keys',
       title: 'Passkeys',
       description: 'Use Face ID, Touch ID, Windows Hello, or a security key to sign in without a password.',
       add: 'Add passkey',

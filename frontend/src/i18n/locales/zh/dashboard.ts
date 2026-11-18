@@ -658,6 +658,7 @@ export default {
       cacheWritePrice: '缓存写入',
       cacheWrite5mPrice: '缓存写入（5m）',
       cacheWrite1hPrice: '缓存写入（1h）',
+      cacheWrite12hPrice: '缓存写入（12h）',
       cacheReadPrice: '缓存读取',
       imageInputPrice: '图片输入',
       imageOutputPrice: '图片输出',
@@ -825,6 +826,11 @@ export default {
 
   // Profile
   profile: {
+    manageShort: '管理',
+    tabs: { basics: '个人资料', bindings: '登录方式', notifications: '通知提醒' },
+    accountDetails: '账户详情',
+    bindingDetails: '{providerName} 绑定详情',
+    bindShort: '绑定',
     title: '个人设置',
     description: '管理您的账户信息和设置',
     accountBalance: '账户余额',
@@ -835,11 +841,11 @@ export default {
     overviewTitle: '账户总览',
     overviewDescription: '快速查看账号状态、资料来源与常用设置。',
     basicsTitle: '资料与头像',
-    basicsDescription: '维护公开展示信息，并保持头像与昵称风格一致。',
+    basicsDescription: '管理你的头像、昵称和联系信息。',
     linkedProfileSources: '资料来源',
     linkedProfileSourcesDescription: '部分头像和昵称可能同步自第三方登录方式。',
     securityTitle: '安全设置',
-    securityDescription: '密码、双因素认证和通知提醒集中放在右侧。',
+    securityDescription: '管理登录密码、双因素认证和 Passkey。',
     administrator: '管理员',
     user: '用户',
     username: '用户名',
@@ -866,6 +872,7 @@ export default {
     passwordChangeFailed: '密码修改失败',
     // TOTP 2FA
     totp: {
+      codeDigit: '验证码第 {digit} 位',
       title: '双因素认证 (2FA)',
       statusLoadFailed: '暂时无法读取双因素认证状态，请重试。',
       description: '使用 Google Authenticator 等应用增强账户安全',
@@ -905,6 +912,8 @@ export default {
       sendCodeFailed: '发送验证码失败'
     },
     passkey: {
+      manage: '管理 Passkey',
+      count: '{count} 把',
       title: 'Passkey',
       description: '使用面容 ID、触控 ID、Windows Hello 或安全密钥免密码登录。',
       add: '添加 Passkey',

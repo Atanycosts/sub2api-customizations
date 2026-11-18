@@ -4,7 +4,10 @@
       <div
         v-if="show"
         class="modal-overlay"
-        :class="{ 'announcement-dialog': variant === 'announcement' }"
+        :class="{
+          'announcement-dialog': variant === 'announcement',
+          'profile-dialog': variant === 'profile'
+        }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
         role="dialog"
@@ -12,7 +15,12 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" tabindex="-1" @click.stop>
+        <div
+          ref="dialogRef"
+          :class="['modal-content', widthClasses]"
+          tabindex="-1"
+          @click.stop
+        >
           <!-- Header -->
           <div class="modal-header">
             <h3 :id="dialogId" class="modal-title">
@@ -73,7 +81,7 @@ interface Props {
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
   zIndex?: number
-  variant?: 'default' | 'announcement'
+  variant?: 'default' | 'announcement' | 'profile'
 }
 
 interface Emits {
@@ -121,11 +129,20 @@ const focusableElements = () => {
     'button, a[href], input:not([type="hidden"]), select, textarea, [tabindex], [contenteditable="true"]'
   )
   return Array.from(elements ?? []).filter((element) => {
-    if (element.tabIndex < 0 || element.matches(':disabled') ||
-      element.closest('[hidden], [inert], [aria-hidden="true"]')) return false
-    for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    if (
+      element.tabIndex < 0 ||
+      element.matches(':disabled') ||
+      element.closest('[hidden], [inert], [aria-hidden="true"]')
+    )
+      return false
+    for (
+      let current: HTMLElement | null = element;
+      current;
+      current = current.parentElement
+    ) {
       const style = window.getComputedStyle(current)
-      if (style.display === 'none' || style.visibility === 'hidden') return false
+      if (style.display === 'none' || style.visibility === 'hidden')
+        return false
       if (current === dialogRef.value) break
     }
     return true
@@ -133,7 +150,12 @@ const focusableElements = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if (event.defaultPrevented || !props.show || [...openDialogs].pop() !== dialogId) return
+  if (
+    event.defaultPrevented ||
+    !props.show ||
+    [...openDialogs].pop() !== dialogId
+  )
+    return
   if (props.closeOnEscape && event.key === 'Escape') {
     emit('close')
   }
@@ -146,8 +168,10 @@ const handleKeydown = (event: KeyboardEvent) => {
   if (!first) {
     event.preventDefault()
     dialogRef.value?.focus()
-  } else if (!elements.includes(active as HTMLElement) ||
-    (event.shiftKey ? active === first : active === last)) {
+  } else if (
+    !elements.includes(active as HTMLElement) ||
+    (event.shiftKey ? active === first : active === last)
+  ) {
     event.preventDefault()
     ;(event.shiftKey ? last : first)?.focus()
   }
@@ -209,21 +233,32 @@ onUnmounted(() => {
 <style scoped>
 .announcement-dialog .modal-content {
   background: rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-ink) / .28);
+  border: 1px solid rgb(var(--c-ink) / 0.28);
   border-radius: var(--radius-public);
-  box-shadow: 0 18px 64px rgb(0 0 0 / .12);
+  box-shadow: 0 18px 64px rgb(0 0 0 / 0.12);
   min-height: 0;
 }
 .announcement-dialog .modal-header,
 .announcement-dialog .modal-footer {
-  border-color: rgb(var(--c-ink) / .13);
+  border-color: rgb(var(--c-ink) / 0.13);
   padding: 18px 24px;
 }
-.announcement-dialog .modal-title { font-size: 15px; font-weight: 500; color: rgb(var(--c-ink)); }
-.announcement-dialog .modal-header button { border-radius: var(--radius-public); }
-.announcement-dialog .modal-body { padding: 0; min-height: 0; }
+.announcement-dialog .modal-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: rgb(var(--c-ink));
+}
+.announcement-dialog .modal-header button {
+  border-radius: var(--radius-public);
+}
+.announcement-dialog .modal-body {
+  padding: 0;
+  min-height: 0;
+}
 @media (max-width: 640px) {
   .announcement-dialog .modal-header,
-  .announcement-dialog .modal-footer { padding: 14px 20px; }
+  .announcement-dialog .modal-footer {
+    padding: 14px 20px;
+  }
 }
 </style>

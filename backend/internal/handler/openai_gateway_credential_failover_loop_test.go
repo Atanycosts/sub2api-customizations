@@ -39,6 +39,25 @@ type grokCredentialHandlerRepo struct {
 	missingOnGet   map[int64]bool
 }
 
+func (r *grokCredentialHandlerRepo) ListModelAvailabilityCandidates(_ context.Context, _ *int64, platforms []string, _ bool) ([]service.Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.selectionCalls++
+	out := make([]service.Account, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		if account.Status != service.StatusActive || !account.Schedulable {
+			continue
+		}
+		for _, platform := range platforms {
+			if account.Platform == platform {
+				out = append(out, account)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 func (r *grokCredentialHandlerRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

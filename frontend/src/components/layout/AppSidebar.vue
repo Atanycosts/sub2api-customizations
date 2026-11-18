@@ -486,6 +486,10 @@ const MCPIcon = {
   render: () => h(Icon, { name: 'mcp' })
 }
 
+const PelicanIcon = {
+  render: () => h(Icon, { name: 'beaker' })
+}
+
 const BellIcon = {
   render: () =>
     h(
@@ -735,6 +739,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/memory', label: t('accountMemory.title'), icon: MemoryIcon },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
+    { path: '/pelican', label: t('nav.pelican'), icon: PelicanIcon },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
     { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -786,6 +791,9 @@ const adminNavItems = computed((): NavItem[] => {
   const baseItems: NavItem[] = [
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/admin/ops', label: t('nav.ops'), icon: ChartIcon, featureFlag: flagOpsMonitoring },
+    { path: '/admin/request-timings', label: t('nav.requestTimings'), icon: ChartIcon },
+    { path: '/admin/gateway-operations', label: t('nav.gatewayOperations'), icon: ServerIcon },
+    { path: '/admin/pelican-tests', label: t('nav.pelicanTests'), icon: PelicanIcon },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
     {
